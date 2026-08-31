@@ -7,6 +7,7 @@ default_chain: A
 
 viewer:
   representation: cartoon
+  style: illustrative
   selector: protein
   base_color: "#FFFFFF"
   background: "#FFFFFF"
