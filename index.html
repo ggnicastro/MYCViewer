@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Load a PDB structure, color residue ranges, and create named Mol* components from a YAML annotation file.">
+  <meta name="description" content="Load a PDB structure, color residue ranges or exact residue positions, and create named Mol* components from a YAML annotation file.">
   <meta name="theme-color" content="#111827">
   <title>Protein Region Viewer</title>
 
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/molstar@5.11.0/build/viewer/molstar.css">
-  <link rel="stylesheet" href="./styles.css?v=2">
+  <link rel="stylesheet" href="./styles.css?v=4">
 </head>
 <body>
   <header class="app-header">
@@ -35,7 +35,7 @@
   <main class="page-shell">
     <section class="control-card" aria-label="Structure and annotation controls">
       <div class="control-intro">
-        <p class="eyebrow">Residue-range annotation</p>
+        <p class="eyebrow">Residue annotation</p>
         <h1 id="pageTitle">Color and organize protein regions from YAML</h1>
         <p id="pageSubtitle">Create a colored base view plus one named Mol* component for every YAML region.</p>
       </div>
@@ -143,7 +143,7 @@
         </header>
 
         <div class="annotation-summary" id="annotationSummary">
-          Load a structure and annotation file to see the region legend, residue numbering, chain coverage, and validation warnings.
+          Load a structure and annotation file to see the region legend, residue numbering, exact-position or range coverage, and validation warnings.
         </div>
 
         <div class="legend-list" id="legendList">
@@ -159,8 +159,13 @@
         </div>
 
         <div class="annotation-note">
-          <strong>Range behavior</strong>
-          <span><code>start</code> and <code>end</code> are inclusive. When regions overlap, entries later in the YAML file take color priority.</span>
+          <strong>Component coloring</strong>
+          <span>Use <code>component_color_theme: element-symbol</code> for native atom/CPK colors on ball-and-stick components. The base region keeps its YAML <code>color</code>.</span>
+        </div>
+
+        <div class="annotation-note">
+          <strong>Selection behavior</strong>
+          <span>Use inclusive <code>start</code>/<code>end</code> ranges or exact lists such as <code>positions: [2, 10, 22]</code>. Use one selection form per region. Later YAML entries take color priority when selections overlap.</span>
         </div>
       </aside>
     </section>
@@ -169,7 +174,7 @@
   <footer class="page-footer">
     <span>Mol* Viewer 5.11.0</span>
     <span aria-hidden="true">•</span>
-    <span>MolViewSpec selectors + components</span>
+    <span>MolViewSpec residue selectors + components</span>
     <span aria-hidden="true">•</span>
     <span>PDB + YAML, static GitHub Pages</span>
   </footer>
@@ -180,9 +185,9 @@
 
   <noscript><div class="noscript-message">Enable JavaScript to use the molecular viewer.</div></noscript>
 
-  <script src="./config.js?v=2"></script>
+  <script src="./config.js?v=4"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/molstar@5.11.0/build/viewer/molstar.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js"></script>
-  <script defer src="./app.js?v=2"></script>
+  <script defer src="./app.js?v=4"></script>
 </body>
 </html>

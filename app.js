@@ -1,10 +1,12 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '1.2.0';
+  const APP_VERSION = '1.4.0';
   const MAX_PDB_BYTES = 50 * 1024 * 1024;
   const MAX_YAML_BYTES = 2 * 1024 * 1024;
   const MAX_REGIONS = 1000;
+  const MAX_POSITIONS_PER_REGION = 5000;
+  const MAX_SELECTOR_EXPRESSIONS = 25000;
   const MAX_COMPONENTS = 250;
   const REGION_COMPONENT_CUSTOM_KEY = 'protein_region_viewer_component';
   const DEFAULT_LAYOUT = 'sequence-controls';
@@ -43,6 +45,52 @@
     'cartoon', 'backbone', 'ball_and_stick', 'line', 'spacefill', 'carbohydrate', 'surface', 'putty'
   ]);
   const BASE_SELECTORS = new Set(['all', 'polymer', 'protein', 'nucleic', 'branched', 'ligand', 'ion', 'water', 'coarse']);
+
+  // Native Mol* structure color themes that are useful for PDB-backed
+  // representations. `uniform` preserves the previous project behavior and
+  // uses component_color (or the region color). `default` delegates the color
+  // choice to Mol* for the selected representation.
+  const COMPONENT_COLOR_THEMES = new Set([
+    'uniform', 'default',
+    'atom-id', 'cartoon', 'chain-id', 'element-index', 'element-symbol',
+    'entity-id', 'entity-source', 'formal-charge', 'hydrophobicity',
+    'illustrative', 'model-index', 'molecule-type', 'occupancy',
+    'operator-hkl', 'operator-name', 'polymer-id', 'polymer-index',
+    'residue-charge', 'residue-name', 'secondary-structure', 'sequence-id',
+    'structure-index', 'trajectory-index', 'uncertainty', 'unit-index'
+  ]);
+
+  const COMPONENT_COLOR_THEME_ALIASES = Object.freeze({
+    atom: 'element-symbol',
+    atoms: 'element-symbol',
+    cpk: 'element-symbol',
+    element: 'element-symbol',
+    elements: 'element-symbol',
+    'atom-color': 'element-symbol',
+    'atom-colors': 'element-symbol',
+    'element-color': 'element-symbol',
+    'element-colors': 'element-symbol',
+    chain: 'chain-id',
+    chains: 'chain-id',
+    residue: 'residue-name',
+    residues: 'residue-name',
+    'residue-type': 'residue-name',
+    'amino-acid': 'residue-name',
+    'amino-acids': 'residue-name',
+    secondary: 'secondary-structure',
+    sequence: 'sequence-id',
+    rainbow: 'sequence-id',
+    'sequence-position': 'sequence-id',
+    hydrophobic: 'hydrophobicity',
+    charge: 'residue-charge',
+    'b-factor': 'uncertainty',
+    bfactor: 'uncertainty',
+    'temperature-factor': 'uncertainty',
+    region: 'uniform',
+    fixed: 'uniform',
+    automatic: 'default',
+    auto: 'default'
+  });
 
   // MolViewSpec supports custom loading extensions. The YAML scene adds
   // metadata to component and representation nodes; this extension converts
@@ -136,7 +184,7 @@
 
   function normalizeConfig(raw) {
     const title = cleanString(raw.title) || 'Protein Region Viewer';
-    const subtitle = cleanString(raw.subtitle) || 'Color PDB residue ranges and create named Mol* components from YAML';
+    const subtitle = cleanString(raw.subtitle) || 'Color PDB residue ranges or exact residue sets and style named Mol* components from YAML';
     return {
       title,
       subtitle,
@@ -191,6 +239,62 @@
     return normalized;
   }
 
+  function normalizeComponentColorTheme(value, fallback = 'uniform', path = 'component_color_theme') {
+    const raw = cleanString(value ?? fallback)
+      .toLowerCase()
+      .replaceAll('_', '-')
+      .replace(/\s+/g, '-');
+    const normalized = COMPONENT_COLOR_THEME_ALIASES[raw] || raw;
+    if (!COMPONENT_COLOR_THEMES.has(normalized)) {
+      throw new Error(
+        `${path} "${raw}" is not supported. Use "uniform", "default", ` +
+        `"element-symbol", "chain-id", "residue-name", "secondary-structure", ` +
+        `"sequence-id", or another documented Mol* theme.`
+      );
+    }
+    return normalized;
+  }
+
+  function normalizeOptionalColor(value, path) {
+    if (value === undefined || value === null || value === '') return null;
+    return normalizeColor(value, '', path);
+  }
+
+  function normalizeThemeParams(value, path) {
+    if (value === undefined || value === null || value === '') return null;
+    const budget = { nodes: 0 };
+    const walk = (item, itemPath, depth) => {
+      budget.nodes += 1;
+      if (budget.nodes > 5000) throw new Error(`${path} is too large.`);
+      if (depth > 20) throw new Error(`${path} is nested too deeply.`);
+      if (item === null || typeof item === 'string' || typeof item === 'boolean') return item;
+      if (typeof item === 'number') {
+        if (!Number.isFinite(item)) throw new Error(`${itemPath} must contain a finite number.`);
+        return item;
+      }
+      if (Array.isArray(item)) {
+        if (item.length > 1000) throw new Error(`${itemPath} contains too many array entries.`);
+        return item.map((entry, index) => walk(entry, `${itemPath}[${index}]`, depth + 1));
+      }
+      if (!isPlainObject(item)) {
+        throw new Error(`${itemPath} must contain only YAML objects, arrays, strings, numbers, booleans, or null.`);
+      }
+      const entries = Object.entries(item);
+      if (entries.length > 250) throw new Error(`${itemPath} contains too many properties.`);
+      const result = {};
+      for (const [key, entry] of entries) {
+        if (['__proto__', 'prototype', 'constructor'].includes(key)) {
+          throw new Error(`${itemPath}.${key} is not allowed.`);
+        }
+        result[key] = walk(entry, `${itemPath}.${key}`, depth + 1);
+      }
+      return result;
+    };
+    const normalized = walk(value, path, 0);
+    if (!isPlainObject(normalized)) throw new Error(`${path} must be a YAML object/mapping.`);
+    return normalized;
+  }
+
   function numberInRange(value, fallback, path, min = 0, max = 1) {
     if (value === undefined || value === null || value === '') return fallback;
     const parsed = typeof value === 'number' ? value : Number(String(value).trim());
@@ -229,6 +333,56 @@
       throw new Error(`${path} must be an integer residue number.`);
     }
     return parsed;
+  }
+
+  function normalizePositionList(value, path) {
+    if (!Array.isArray(value)) {
+      throw new Error(`${path} must be a YAML list such as [2, 10, 22].`);
+    }
+    if (value.length === 0) throw new Error(`${path} cannot be empty.`);
+    if (value.length > MAX_POSITIONS_PER_REGION) {
+      throw new Error(`${path} contains more than ${MAX_POSITIONS_PER_REGION} residue positions.`);
+    }
+
+    const positions = [];
+    const seen = new Set();
+    value.forEach((item, index) => {
+      const position = integerField(item, `${path}[${index}]`);
+      if (!seen.has(position)) {
+        seen.add(position);
+        positions.push(position);
+      }
+    });
+    positions.sort((a, b) => a - b);
+    return positions;
+  }
+
+  function compressPositions(positions) {
+    const runs = [];
+    let start = null;
+    let end = null;
+    for (const position of positions) {
+      if (start === null) {
+        start = position;
+        end = position;
+      } else if (position === end + 1) {
+        end = position;
+      } else {
+        runs.push({ start, end });
+        start = position;
+        end = position;
+      }
+    }
+    if (start !== null) runs.push({ start, end });
+    return runs;
+  }
+
+  function selectorExpressionCount(region) {
+    if (!region.enabled) return 0;
+    const selections = region.selectionType === 'positions'
+      ? compressPositions(region.positions).length
+      : 1;
+    return selections * Math.max(1, region.chains.length);
   }
 
   function parseYamlAnnotation(text, filename = 'annotation.yaml') {
@@ -270,6 +424,16 @@
       representationRaw,
       'viewer.component_representation'
     );
+    const componentColorThemeRaw = normalizeComponentColorTheme(
+      viewerRaw.component_color_theme ?? viewerRaw.componentColorTheme ?? viewerRaw.component_color_scheme ?? viewerRaw.componentColorScheme,
+      'uniform',
+      'viewer.component_color_theme'
+    );
+    const componentColorThemeParamsRaw = normalizeThemeParams(
+      viewerRaw.component_color_theme_params ?? viewerRaw.componentColorThemeParams ??
+        viewerRaw.component_color_params ?? viewerRaw.componentColorParams,
+      'viewer.component_color_theme_params'
+    );
     const baseSelector = cleanString(viewerRaw.selector || raw.selector || 'protein').toLowerCase();
     if (!BASE_SELECTORS.has(baseSelector)) throw new Error(`viewer.selector "${baseSelector}" is not supported.`);
 
@@ -287,6 +451,12 @@
         showTooltips: toBoolean(viewerRaw.show_tooltips ?? viewerRaw.showTooltips ?? raw.show_tooltips, true),
         createComponents: toBoolean(viewerRaw.create_components ?? viewerRaw.createComponents, true),
         componentRepresentation: componentRepresentationRaw,
+        componentColorTheme: componentColorThemeRaw,
+        componentColorThemeParams: componentColorThemeParamsRaw,
+        componentColor: normalizeOptionalColor(
+          viewerRaw.component_color ?? viewerRaw.componentColor,
+          'viewer.component_color'
+        ),
         componentsVisible: toBoolean(viewerRaw.components_visible ?? viewerRaw.componentsVisible, false),
         componentOpacity: numberInRange(
           viewerRaw.component_opacity ?? viewerRaw.componentOpacity,
@@ -305,15 +475,39 @@
       const name = cleanString(entry.name || entry.label || entry.title);
       if (!name) throw new Error(`${path}.name is required.`);
 
+      const positionsValue =
+        entry.positions ?? entry.residues ?? entry.residue_positions ?? entry.residuePositions ??
+        entry.position_list ?? entry.positionList;
+      const hasPositionList = positionsValue !== undefined && positionsValue !== null;
       const singleResidue = entry.residue ?? entry.position;
       const startValue = entry.start ?? entry.begin ?? entry.from ?? singleResidue;
       const endValue = entry.end ?? entry.stop ?? entry.to ?? singleResidue;
-      if (startValue === undefined || endValue === undefined) {
-        throw new Error(`${path} requires start and end residue numbers.`);
+      const hasRangeSelection = startValue !== undefined || endValue !== undefined;
+
+      if (hasPositionList && hasRangeSelection) {
+        throw new Error(
+          `${path} must use either positions: [...] or start/end (or residue), not both in the same region.`
+        );
       }
-      const start = integerField(startValue, `${path}.start`);
-      const end = integerField(endValue, `${path}.end`);
-      if (start > end) throw new Error(`${path}.start (${start}) cannot be greater than end (${end}).`);
+
+      let selectionType;
+      let positions = [];
+      let start = null;
+      let end = null;
+      if (hasPositionList) {
+        selectionType = 'positions';
+        positions = normalizePositionList(positionsValue, `${path}.positions`);
+      } else {
+        selectionType = 'range';
+        if (startValue === undefined || endValue === undefined) {
+          throw new Error(
+            `${path} requires either start and end residue numbers, one residue/position, or positions: [...].`
+          );
+        }
+        start = integerField(startValue, `${path}.start`);
+        end = integerField(endValue, `${path}.end`);
+        if (start > end) throw new Error(`${path}.start (${start}) cannot be greater than end (${end}).`);
+      }
 
       const numbering = normalizeNumbering(entry.numbering, globalNumbering);
       const chainValue = entry.chains ?? entry.chain ?? entry.chain_id ?? entry.chainId;
@@ -330,6 +524,27 @@
         annotation.viewer.componentRepresentation,
         `${path}.component_representation`
       );
+      const componentColorThemeValue =
+        entry.component_color_theme ?? entry.componentColorTheme ??
+        entry.component_color_scheme ?? entry.componentColorScheme;
+      const componentColorTheme = normalizeComponentColorTheme(
+        componentColorThemeValue,
+        annotation.viewer.componentColorTheme,
+        `${path}.component_color_theme`
+      );
+      const componentColorThemeParamsValue =
+        entry.component_color_theme_params ?? entry.componentColorThemeParams ??
+        entry.component_color_params ?? entry.componentColorParams;
+      const componentColorThemeParams = componentColorThemeParamsValue !== undefined
+        ? normalizeThemeParams(componentColorThemeParamsValue, `${path}.component_color_theme_params`)
+        : componentColorTheme === annotation.viewer.componentColorTheme
+          ? annotation.viewer.componentColorThemeParams
+          : null;
+      const componentColor =
+        normalizeOptionalColor(
+          entry.component_color ?? entry.componentColor ?? entry.component_colour,
+          `${path}.component_color`
+        ) || annotation.viewer.componentColor || color;
       const componentOpacity = numberInRange(
         entry.component_opacity ?? entry.componentOpacity,
         annotation.viewer.componentOpacity,
@@ -340,8 +555,10 @@
         index,
         enabled,
         name,
+        selectionType,
         start,
         end,
+        positions,
         color,
         numbering,
         chains,
@@ -351,6 +568,9 @@
         createComponent,
         componentName,
         componentRepresentation,
+        componentColorTheme,
+        componentColorThemeParams,
+        componentColor,
         componentOpacity,
         componentVisible: toBoolean(
           entry.component_visible ?? entry.componentVisible,
@@ -367,6 +587,17 @@
       throw new Error(
         `The YAML file would create ${componentNodeCount} Mol* components. ` +
         `The safety limit is ${MAX_COMPONENTS}; disable create_component, tooltip, or label on some entries.`
+      );
+    }
+
+    const selectorExpressionCountTotal = annotation.regions.reduce(
+      (total, region) => total + selectorExpressionCount(region),
+      0
+    );
+    if (selectorExpressionCountTotal > MAX_SELECTOR_EXPRESSIONS) {
+      throw new Error(
+        `The YAML file would create ${selectorExpressionCountTotal} residue-selector expressions. ` +
+        `The safety limit is ${MAX_SELECTOR_EXPRESSIONS}; reduce very large positions lists or split the annotation.`
       );
     }
     return annotation;
@@ -430,39 +661,127 @@
     const targetChains = region.chains.length
       ? pdbInfo.chains.filter(item => region.chains.includes(item.chain))
       : pdbInfo.chains;
+    const missingChains = region.chains.filter(chain => !pdbInfo.chains.some(item => item.chain === chain));
     let matched = 0;
+
+    if (region.selectionType === 'positions') {
+      const missingPositions = [];
+      for (const chain of targetChains) {
+        const numbers = region.numbering === 'auth' ? chain.authNumbers : chain.labelNumbers;
+        const missing = [];
+        for (const position of region.positions) {
+          if (numbers.has(position)) matched += 1;
+          else missing.push(position);
+        }
+        if (missing.length) missingPositions.push({ chain: chain.chain, positions: missing });
+      }
+      const requestedChainCount = region.chains.length || targetChains.length;
+      const requested = region.positions.length * requestedChainCount;
+      const complete = missingChains.length === 0 && requested > 0 && matched === requested;
+      return {
+        matched,
+        requested,
+        complete,
+        partial: matched > 0 && !complete,
+        missingChains,
+        missingPositions
+      };
+    }
+
     for (const chain of targetChains) {
       const numbers = region.numbering === 'auth' ? chain.authNumbers : chain.labelNumbers;
       for (const value of numbers) {
         if (value >= region.start && value <= region.end) matched += 1;
       }
     }
-    const missingChains = region.chains.filter(chain => !pdbInfo.chains.some(item => item.chain === chain));
-    return { matched, missingChains };
+    return {
+      matched,
+      requested: null,
+      complete: matched > 0 && missingChains.length === 0,
+      partial: false,
+      missingChains,
+      missingPositions: []
+    };
   }
 
   function makeSelector(region) {
     const chainKey = region.numbering === 'auth' ? 'auth_asym_id' : 'label_asym_id';
     const startKey = region.numbering === 'auth' ? 'beg_auth_seq_id' : 'beg_label_seq_id';
     const endKey = region.numbering === 'auth' ? 'end_auth_seq_id' : 'end_label_seq_id';
-    const expression = chain => {
-      const selector = { [startKey]: region.start, [endKey]: region.end };
-      if (chain !== null && chain !== undefined) selector[chainKey] = chain;
-      return selector;
-    };
-    if (region.chains.length === 0) return expression(null);
-    if (region.chains.length === 1) return expression(region.chains[0]);
-    return region.chains.map(expression);
+    const ranges = region.selectionType === 'positions'
+      ? compressPositions(region.positions)
+      : [{ start: region.start, end: region.end }];
+    const chains = region.chains.length ? region.chains : [null];
+    const selectors = [];
+
+    for (const chain of chains) {
+      for (const range of ranges) {
+        const selector = { [startKey]: range.start, [endKey]: range.end };
+        if (chain !== null && chain !== undefined) selector[chainKey] = chain;
+        selectors.push(selector);
+      }
+    }
+    return selectors.length === 1 ? selectors[0] : selectors;
+  }
+
+  function formatPositionList(positions, limit = 12) {
+    if (positions.length <= limit) return positions.join(', ');
+    const visible = positions.slice(0, limit).join(', ');
+    return `${visible}, … (+${positions.length - limit})`;
+  }
+
+  function regionSelectionText(region, compact = false) {
+    if (region.selectionType === 'positions') {
+      const list = formatPositionList(region.positions, compact ? 8 : 20);
+      return `positions [${list}]`;
+    }
+    return `residues ${region.start}–${region.end}`;
+  }
+
+  function regionCoverageWarning(region) {
+    return region.coverage.matched === 0 || region.coverage.partial;
+  }
+
+  function missingPositionText(region) {
+    if (!region.coverage.missingPositions?.length) return '';
+    const groups = region.coverage.missingPositions.slice(0, 4).map(item => {
+      const chain = displayChain(item.chain);
+      return `${chain}: ${formatPositionList(item.positions, 8)}`;
+    });
+    const extra = region.coverage.missingPositions.length > 4
+      ? `; … (+${region.coverage.missingPositions.length - 4} chains)`
+      : '';
+    return ` Missing positions by chain: ${groups.join('; ')}${extra}.`;
   }
 
   function regionTooltip(region) {
     const chainText = region.chains.length ? `chain ${region.chains.join(', ')}` : 'all chains';
-    const base = `${region.name} · ${chainText} · ${region.numbering} residues ${region.start}–${region.end}`;
+    const base = `${region.name} · ${chainText} · ${region.numbering} ${regionSelectionText(region)}`;
     return region.description ? `${base} · ${region.description}` : base;
   }
 
   function createsMvsComponent(region) {
     return region.enabled && (region.createComponent || region.tooltip || region.label);
+  }
+
+  function applyComponentColor(representation, region) {
+    if (region.componentColorTheme === 'uniform') {
+      representation.color({ color: region.componentColor });
+      return;
+    }
+    if (region.componentColorTheme === 'default') {
+      representation.color({
+        custom: { molstar_use_default_coloring: true }
+      });
+      return;
+    }
+    const custom = {
+      molstar_color_theme_name: region.componentColorTheme
+    };
+    if (region.componentColorThemeParams) {
+      custom.molstar_color_theme_params = region.componentColorThemeParams;
+    }
+    representation.color({ custom });
   }
 
   function buildMvsData(pdbObjectUrl, annotation) {
@@ -526,7 +845,7 @@
             }
           }
         });
-        regionRepresentation.color({ color: region.color });
+        applyComponentColor(regionRepresentation, region);
         if (region.componentOpacity < 1) {
           regionRepresentation.opacity({ opacity: region.componentOpacity });
         }
@@ -576,7 +895,7 @@
 
     const generation = ++state.loadGeneration;
     setBusy(true);
-    showOverlay('loading', 'Loading PDB + YAML', 'Reading files, validating residue ranges, and building the Mol* scene…');
+    showOverlay('loading', 'Loading PDB + YAML', 'Reading files, validating residue selections, and building the Mol* scene…');
     setViewerStatus('loading', 'Loading');
 
     try {
@@ -625,8 +944,8 @@
       const componentCount = annotation.regions.filter(
         region => region.enabled && region.createComponent && region.coverage.matched > 0
       ).length;
-      const warnings = annotation.regions.filter(region => region.enabled && region.coverage.matched === 0).length;
-      setViewerStatus(warnings ? 'warning' : 'ready', warnings ? `${warnings} range warning${warnings === 1 ? '' : 's'}` : 'Loaded');
+      const warnings = annotation.regions.filter(region => region.enabled && regionCoverageWarning(region)).length;
+      setViewerStatus(warnings ? 'warning' : 'ready', warnings ? `${warnings} selection warning${warnings === 1 ? '' : 's'}` : 'Loaded');
       showToast(
         `Loaded ${enabledCount} colored region${enabledCount === 1 ? '' : 's'}` +
         (componentCount ? ` and created ${componentCount} Mol* component${componentCount === 1 ? '' : 's'}.` : '.')
@@ -687,7 +1006,7 @@
     const annotation = current.annotation;
     const enabledRegions = annotation.regions.filter(region => region.enabled);
     const chainLabels = current.pdbInfo.chains.map(item => displayChain(item.chain)).join(', ') || 'none';
-    const warningCount = enabledRegions.filter(region => region.coverage.matched === 0).length;
+    const warningCount = enabledRegions.filter(regionCoverageWarning).length;
 
     elements.structureTitle.textContent = annotation.title || current.pdbName;
     elements.sourceSummary.textContent = `${current.pdbName} + ${current.yamlName} · ${current.pdbInfo.atomCount.toLocaleString()} polymer atoms`;
@@ -709,7 +1028,7 @@
         ? `${matchingComponents.length} matching of ${configuredComponents.length} configured · ${visibleComponents} visible initially`
         : 'Disabled'
     );
-    appendSummaryRow(grid, 'Validation', warningCount ? `${warningCount} range warning${warningCount === 1 ? '' : 's'}` : 'All enabled ranges matched residues');
+    appendSummaryRow(grid, 'Validation', warningCount ? `${warningCount} selection warning${warningCount === 1 ? '' : 's'}` : 'All enabled selections matched residues');
     elements.annotationSummary.appendChild(grid);
 
     elements.legendList.innerHTML = '';
@@ -728,7 +1047,10 @@
       title.textContent = region.name;
       const meta = document.createElement('span');
       const chainText = region.chains.length ? region.chains.map(displayChain).join(', ') : 'all chains';
-      meta.textContent = `${chainText} · ${region.numbering} ${region.start}–${region.end} · ${region.coverage.matched} matched`;
+      const coverageText = region.coverage.requested === null
+        ? `${region.coverage.matched} matched`
+        : `${region.coverage.matched} of ${region.coverage.requested} matched`;
+      meta.textContent = `${chainText} · ${region.numbering} ${regionSelectionText(region, true)} · ${coverageText}`;
       copy.append(title, meta);
       if (region.description) {
         const description = document.createElement('small');
@@ -746,12 +1068,25 @@
         const missing = region.coverage.missingChains.length
           ? ` Missing chain(s): ${region.coverage.missingChains.join(', ')}.`
           : '';
-        item.title = `This range did not match any parsed PDB residues.${missing}`;
+        item.title = `This selection did not match any parsed PDB residues.${missing}${missingPositionText(region)}`;
+      } else if (region.coverage.partial) {
+        badge.className = 'legend-warning';
+        badge.textContent = 'PARTIAL';
+        const missing = region.coverage.missingChains.length
+          ? ` Missing chain(s): ${region.coverage.missingChains.join(', ')}.`
+          : '';
+        item.title = `Some exact residue positions were not found.${missing}${missingPositionText(region)}`;
       } else if (region.createComponent) {
         badge.className = 'legend-label-badge';
         badge.textContent = 'COMPONENT';
+        const componentColorDescription = region.componentColorTheme === 'uniform'
+          ? `uniform ${region.componentColor}`
+          : region.componentColorTheme === 'default'
+            ? 'Mol* default coloring'
+            : `Mol* ${region.componentColorTheme} theme`;
         badge.title = `${region.componentName} · ${region.componentRepresentation.replaceAll('_', ' ')} · ` +
-          `${Math.round(region.componentOpacity * 100)}% opacity · ${region.componentVisible ? 'visible' : 'hidden'} at load`;
+          `${componentColorDescription} · ${Math.round(region.componentOpacity * 100)}% opacity · ` +
+          `${region.componentVisible ? 'visible' : 'hidden'} at load`;
       } else if (region.label) {
         badge.className = 'legend-label-badge';
         badge.textContent = '3D LABEL';
@@ -917,7 +1252,59 @@
   }
 
   function downloadTemplate() {
-    const template = `version: 1\ntitle: My protein regions\nnumbering: auth\ndefault_chain: A\n\nviewer:\n  representation: cartoon\n  base_color: \"#CBD5E1\"\n  background: \"#FFFFFF\"\n  show_labels: false\n  show_tooltips: true\n\n  # Keep the colored base structure and also create one named Mol* component\n  # for each region. Independent component representations are hidden initially\n  # to avoid drawing the same residues twice. Open a layout with Controls and\n  # use the component eye icons to show, hide, isolate, or restyle each region.\n  create_components: true\n  component_representation: cartoon\n  components_visible: false\n  component_opacity: 1.0\n  base_component_name: Base structure\n\nregions:\n  - name: Region 1\n    start: 1\n    end: 25\n    color: \"#2563EB\"\n\n  - name: Region 2\n    start: 26\n    end: 50\n    color: \"#F97316\"\n    component_name: Region 2 surface\n    component_representation: surface\n    component_opacity: 0.65\n    component_visible: false\n`;
+    const template = `version: 1
+title: My protein regions
+numbering: auth
+default_chain: A
+
+viewer:
+  representation: cartoon
+  base_color: "#CBD5E1"
+  background: "#FFFFFF"
+  show_labels: false
+  show_tooltips: true
+
+  # Keep the colored base structure and also create one named Mol* component
+  # for each region. Independent component representations are hidden initially
+  # to avoid drawing the same residues twice. Open a layout with Controls and
+  # use the component eye icons to show, hide, isolate, or restyle each region.
+  create_components: true
+  component_representation: cartoon
+
+  # uniform = use the region color; element-symbol = atom/CPK colors;
+  # default = let Mol* choose the normal color theme for the representation.
+  component_color_theme: uniform
+
+  components_visible: false
+  component_opacity: 1.0
+  base_component_name: Base structure
+
+regions:
+  # Inclusive continuous range.
+  - name: Region 1
+    start: 1
+    end: 25
+    color: "#2563EB"
+
+  # Exact, non-contiguous residue positions. Use this instead of start/end for
+  # this entry. All positions form one named Mol* component.
+  - name: Active-site atoms
+    positions: [2, 10, 22]
+    color: "#FACC15"
+    component_representation: ball_and_stick
+    component_color_theme: element-symbol
+    component_visible: true
+
+  - name: Region 3 surface
+    start: 36
+    end: 50
+    color: "#F97316"
+    component_representation: surface
+    component_color: "#F97316"
+    component_color_theme: uniform
+    component_opacity: 0.65
+    component_visible: false
+`;
     downloadText(template, 'protein-regions-template.yaml', 'application/yaml;charset=utf-8');
   }
 
@@ -1080,15 +1467,22 @@
         regionCount: state.current.annotation.regions.filter(region => region.enabled).length,
         regions: state.current.annotation.regions.map(region => ({
           name: region.name,
+          selectionType: region.selectionType,
           start: region.start,
           end: region.end,
+          positions: [...region.positions],
           color: region.color,
           numbering: region.numbering,
           chains: [...region.chains],
           matchedResidues: region.coverage.matched,
+          requestedResidues: region.coverage.requested,
+          selectionComplete: region.coverage.complete,
           createComponent: region.createComponent,
           componentName: region.componentName,
           componentRepresentation: region.componentRepresentation,
+          componentColorTheme: region.componentColorTheme,
+          componentColorThemeParams: region.componentColorThemeParams,
+          componentColor: region.componentColor,
           componentOpacity: region.componentOpacity,
           componentVisible: region.componentVisible
         }))

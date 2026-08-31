@@ -1,6 +1,6 @@
 # Mol* PDB + YAML Protein Region Viewer
 
-A static, browser-based Mol* Viewer application that loads one PDB structure and one YAML annotation file, colors residue ranges, and creates a separately named Mol* component for every enabled region.
+A static, browser-based Mol* Viewer application that loads one PDB structure and one YAML annotation file, colors inclusive residue ranges or exact residue-position sets, and creates a separately named Mol* component for every enabled region.
 
 The project is designed for GitHub Pages and does not require a build step, backend, database, or API key. Hosted files can load automatically from the repository. Local PDB/YAML pairs are processed only inside the browser tab.
 
@@ -8,8 +8,8 @@ The project is designed for GitHub Pages and does not require a build step, back
 
 For one PDB/YAML pair, the viewer builds two complementary layers:
 
-1. **Colored base view** — one compact protein representation, with YAML regions colored in file order.
-2. **Named region components** — one independent Mol* component per enabled region, each with its own selector, name, representation type, color, opacity, visibility, tooltip, and optional 3D label.
+1. **Colored base view** — one compact protein representation, with YAML range and exact-position selections colored in file order.
+2. **Named region components** — one independent Mol* component per enabled region, whether selected by a range or exact positions, each with its own selector, name, representation type, native Mol* color theme or fixed color, opacity, visibility, tooltip, and optional 3D label.
 
 The region components are hidden initially by default. This prevents their geometry from being drawn on top of the already colored base view. In a layout containing the Mol* **Controls** panel, use the eye control beside the region representation to show it, then hide **Base structure** to isolate that region.
 
@@ -21,12 +21,16 @@ The region components are hidden initially by default. This prevents their geome
 - Create one named Mol* component for every enabled YAML region.
 - Show, hide, focus, and restyle generated components from the standard Mol* controls.
 - Choose global or per-region component names, representation types, and opacity.
+- Use native Mol* color themes such as atom/element colors, chain colors, residue colors, secondary structure, sequence position, hydrophobicity, and uncertainty.
+- Keep a fixed region color on the base cartoon while using a different theme on its independent component.
 - Choose whether components start visible or hidden.
-- Use inclusive `start` and `end` residue numbers.
+- Use inclusive `start` and `end` residue numbers for continuous ranges.
+- Use `positions: [2, 10, 22]` for exact, non-contiguous residues.
+- Mix range entries and exact-position entries in the same YAML file.
 - Select author/PDB numbering (`auth`) or sequential Mol* numbering (`label`).
 - Apply regions to one chain, multiple chains, or all chains.
 - Add descriptions, hover tooltips, and optional 3D labels.
-- Display a generated legend with component status, range coverage, and validation warnings.
+- Display a generated legend with component status, range/exact-position coverage, and validation warnings.
 - Switch between 3D-only, sequence, controls, and full Mol* layouts without reloading the structure.
 - Load files from the repository automatically or select/drop local files.
 - Download the currently loaded PDB, YAML, or a clean YAML template.
@@ -81,7 +85,7 @@ Opening `index.html` directly through a `file://` URL is not recommended because
 ```js
 window.PROTEIN_REGION_VIEWER_CONFIG = {
   title: 'Protein Region Viewer',
-  subtitle: 'Color PDB residue ranges and create named Mol* components from YAML',
+  subtitle: 'Color PDB ranges or exact residue sets and create named Mol* components from YAML',
 
   autoLoad: true,
   pdbUrl: './pdb/my-protein.pdb',
@@ -123,6 +127,7 @@ viewer:
 
   create_components: true
   component_representation: cartoon
+  component_color_theme: uniform
   components_visible: false
   component_opacity: 1.0
   base_component_name: Base structure
@@ -133,13 +138,14 @@ regions:
     end: 85
     color: "#2563EB"
 
-  - name: Catalytic region
-    start: 86
-    end: 170
+  - name: Catalytic residues
+    positions: [92, 117, 143]
     color: "#F97316"
-    component_name: Catalytic region atoms
+    component_name: Catalytic residue atoms
     component_representation: ball_and_stick
+    component_color_theme: element-symbol
     component_opacity: 0.9
+    component_visible: true
 
   - name: C-terminal domain
     start: 171
@@ -147,9 +153,68 @@ regions:
     color: "#10B981"
 ```
 
-`start` and `end` are inclusive. The example colors residues 1 through 85, including both endpoints.
+`start` and `end` are inclusive. `positions` selects only the listed residue numbers. Different entries in one YAML file may use different selection forms.
 
-The `regions` list accepts up to 1,000 entries as a defensive limit. Because each component consumes Mol* state and rendering resources, the application also limits YAML-generated component nodes to 250. Disable `create_component`, `tooltip`, or `label` on entries that do not need independent component nodes.
+The `regions` list accepts up to 1,000 entries as a defensive limit. One exact-position entry may contain up to 5,000 positions, and one annotation may generate up to 25,000 selector expressions after chain expansion and adjacent-position compression. Because each component consumes Mol* state and rendering resources, the application also limits YAML-generated component nodes to 250. Disable `create_component`, `tooltip`, or `label` on entries that do not need independent component nodes.
+
+## Residue selection forms
+
+Every region requires `name`, `color`, and exactly one selection form.
+
+### Inclusive continuous range
+
+```yaml
+- name: Catalytic domain
+  start: 40
+  end: 120
+  color: "#DC2626"
+```
+
+Both endpoints are included.
+
+### Exact residue positions
+
+```yaml
+- name: Catalytic residues
+  positions: [42, 77, 105]
+  color: "#FACC15"
+  component_representation: ball_and_stick
+  component_color_theme: element-symbol
+```
+
+Only residues 42, 77, and 105 are selected. They form one color layer and one named Mol* component containing the union of those residues. The application does **not** create one component per residue.
+
+Exact positions are deduplicated and sorted numerically. For example, `[22, 2, 10, 10]` is normalized to `[2, 10, 22]`.
+
+### One-residue shortcut
+
+```yaml
+- name: Catalytic lysine
+  residue: 42
+  color: "#DC2626"
+```
+
+`position: 42` is an equivalent alias.
+
+A single region entry must not combine `positions` with `start`/`end` or `residue`. Different entries in the same file may freely use different forms:
+
+```yaml
+regions:
+  - name: Domain
+    start: 1
+    end: 100
+    color: "#2563EB"
+
+  - name: Distributed active-site residues
+    positions: [17, 48, 83]
+    color: "#FACC15"
+
+  - name: Catalytic lysine
+    residue: 91
+    color: "#DC2626"
+```
+
+All forms use the same `numbering`, `default_chain`, `chain`, and `chains` rules.
 
 ## Top-level YAML properties
 
@@ -175,6 +240,9 @@ viewer:
 
   create_components: true
   component_representation: cartoon
+  component_color_theme: uniform
+  # component_color: "#7C3AED"
+  # component_color_theme_params: {}
   components_visible: false
   component_opacity: 1.0
   base_component_name: Base structure
@@ -190,6 +258,9 @@ viewer:
 | `show_tooltips` | `true` | Global default for region hover tooltips. |
 | `create_components` | `true` | Creates a separately named Mol* component for every enabled region. |
 | `component_representation` | same as `representation` | Default representation type for generated region components. |
+| `component_color_theme` | `uniform` | Native Mol* color theme for generated components. `uniform` uses a fixed color; `default` delegates to Mol*. |
+| `component_color` | region `color` | Optional fixed component color used when the theme is `uniform`. |
+| `component_color_theme_params` | none | Optional YAML mapping passed to Mol* as native color-theme parameters. |
 | `components_visible` | `false` | Determines whether generated component representations are visible immediately after loading. |
 | `component_opacity` | `1.0` | Default opacity of generated component representations, from `0` to `1`. |
 | `base_component_name` | `Base structure` | Name assigned to the compact base component in Mol*. |
@@ -222,6 +293,112 @@ coarse
 ```
 
 Colors may be six-digit hexadecimal values such as `#2563EB`, three-digit shorthand such as `#26E`, or X11 color names such as `red` and `steelblue`.
+
+## Native Mol* component color themes
+
+The region `color` always controls two things:
+
+- the color applied to that residue selection on the compact base representation;
+- the color swatch shown in the generated legend.
+
+The independent component can use that same fixed color or a native Mol* color theme. These are Mol* theme identifiers requested from YAML; the application does not read or copy styling from a `.molx` snapshot. The most common atomic-detail setup is:
+
+```yaml
+- name: Active-site atoms
+  start: 45
+  end: 52
+  color: "#FACC15"
+  component_representation: ball_and_stick
+  component_color_theme: element-symbol
+  component_visible: true
+```
+
+The selected base residues remain yellow, while the ball-and-stick component uses standard element/CPK coloring: carbon, nitrogen, oxygen, sulfur, and other atoms receive their Mol* element colors.
+
+### Theme values
+
+The most useful values are:
+
+| Theme | Typical use |
+|---|---|
+| `uniform` | One fixed color from `component_color` or the region `color`. |
+| `default` | Let Mol* choose its normal theme for the representation. |
+| `element-symbol` | Color atoms by chemical element; recommended for `ball_and_stick`, `line`, and `spacefill`. |
+| `chain-id` | Different color for each chain. |
+| `residue-name` | Color by amino-acid or residue identity. |
+| `secondary-structure` | Color helices, sheets, and coils by secondary-structure class. |
+| `sequence-id` | N-to-C sequence-position gradient. |
+| `hydrophobicity` | Color by residue hydrophobicity. |
+| `molecule-type` | Distinguish proteins, nucleic acids, ligands, water, and other molecular types. |
+| `illustrative` | Mol* illustrative theme, useful for stylized structural views. |
+| `uncertainty` | Color by coordinate uncertainty/B-factor-like values when available. |
+| `occupancy` | Color by atomic occupancy. |
+| `formal-charge` | Color by formal charge when present in the structure data. |
+
+Additional supported native names include `atom-id`, `cartoon`, `element-index`, `entity-id`, `entity-source`, `model-index`, `operator-hkl`, `operator-name`, `polymer-id`, `polymer-index`, `residue-charge`, `structure-index`, `trajectory-index`, and `unit-index`.
+
+Convenience aliases are accepted. For example, `atom`, `element`, and `cpk` all resolve to `element-symbol`; `chain` resolves to `chain-id`; `residue` resolves to `residue-name`; and `b-factor` resolves to `uncertainty`.
+
+### Separate fixed component color
+
+Use `component_color_theme: uniform` and set `component_color` when the independent component should have a different fixed color from the base range:
+
+```yaml
+- name: Catalytic domain
+  start: 80
+  end: 160
+  color: "#2563EB"
+  component_representation: surface
+  component_color_theme: uniform
+  component_color: "#7C3AED"
+  component_opacity: 0.6
+```
+
+The domain is blue on the base cartoon and violet on the independent surface.
+
+### Global theme with a per-region override
+
+```yaml
+viewer:
+  component_representation: cartoon
+  component_color_theme: uniform
+
+regions:
+  - name: Domain
+    start: 1
+    end: 100
+    color: "#2563EB"
+
+  - name: Active site
+    start: 45
+    end: 52
+    color: "#FACC15"
+    component_representation: ball_and_stick
+    component_color_theme: element-symbol
+```
+
+### Advanced native theme parameters
+
+`component_color_theme_params` passes a YAML mapping to Mol* as `molstar_color_theme_params`. This is intended for advanced users who already know the parameter schema of the selected Mol* theme:
+
+```yaml
+- name: Illustrative domain
+  start: 1
+  end: 100
+  color: "#94A3B8"
+  component_representation: spacefill
+  component_color_theme: illustrative
+  component_color_theme_params:
+    style:
+      name: uniform
+      params:
+        value: 8421504
+        saturation: 0
+        lightness: 0
+    carbonLightness: 0.8
+```
+
+Native theme parameters are passed through without semantic conversion. Their names and value shapes therefore follow the pinned Mol* version, not this project's YAML schema. Basic themes such as `element-symbol` require no parameters.
 
 ## Mol* region components
 
@@ -300,7 +477,7 @@ Tooltips or 3D labels can still require internal selection nodes even when visua
 
 ## Region properties
 
-Canonical region syntax:
+Canonical range syntax:
 
 ```yaml
 - name: RNA-binding insertion
@@ -313,6 +490,9 @@ Canonical region syntax:
   create_component: true
   component_name: RNA-binding insertion atoms
   component_representation: ball_and_stick
+  component_color_theme: element-symbol
+  component_color_theme_params: null
+  component_color: null
   component_opacity: 0.85
   component_visible: false
 
@@ -325,15 +505,20 @@ Canonical region syntax:
 | Property | Required | Description |
 |---|---:|---|
 | `name` | Yes | Region name shown in the legend, tooltip, and Mol* component hierarchy. |
-| `start` | Yes | First residue number, inclusive. |
-| `end` | Yes | Last residue number, inclusive. |
-| `color` | Yes | Region color for both the base color layer and generated component. |
+| `start` | Conditional | First residue number of an inclusive range. Required with `end` when `positions`/`residue` is not used. |
+| `end` | Conditional | Last residue number of an inclusive range. Required with `start` when `positions`/`residue` is not used. |
+| `positions` | Conditional | Exact residue-number list, for example `[2, 10, 22]`; use instead of `start`/`end`. |
+| `residue` | Conditional | One-residue shortcut; use instead of `start`/`end` or `positions`. |
+| `color` | Yes | Region color for the base color layer and legend; also the default fixed component color. |
 | `chain` | No | One chain identifier. Overrides `default_chain`. |
 | `chains` | No | List of chain identifiers, for example `[A, B]`. |
 | `numbering` | No | Per-region override: `auth` or `label`. |
 | `create_component` | No | Per-region override for independent component representation creation. |
 | `component_name` | No | Name shown for the region in the Mol* component hierarchy; defaults to `name`. |
 | `component_representation` | No | Per-region component representation override. |
+| `component_color_theme` | No | Per-region native Mol* color theme override. |
+| `component_color` | No | Per-region fixed color used when `component_color_theme` is `uniform`. |
+| `component_color_theme_params` | No | Advanced native Mol* theme-parameter mapping. |
 | `component_opacity` | No | Per-region opacity override from `0` to `1`. |
 | `component_visible` | No | Per-region initial visibility override. |
 | `label` | No | Adds the region name as a 3D label. |
@@ -347,8 +532,9 @@ Convenience aliases are also accepted:
 - `stop` or `to` for `end`;
 - `colour` for `color`;
 - `chain_id` for `chain`;
-- `residue` for a one-residue region, replacing both `start` and `end`;
-- camelCase equivalents such as `createComponent`, `componentName`, `componentRepresentation`, `componentOpacity`, and `componentVisible`.
+- `residue` or `position` for a one-residue region, replacing both `start` and `end`;
+- `residues`, `residue_positions`, `residuePositions`, `position_list`, or `positionList` for `positions`;
+- camelCase equivalents such as `createComponent`, `componentName`, `componentRepresentation`, `componentColorTheme`, `componentColorThemeParams`, `componentColor`, `componentOpacity`, and `componentVisible`.
 
 Example of one residue:
 
@@ -357,6 +543,17 @@ Example of one residue:
   residue: 42
   color: "#DC2626"
   component_representation: ball_and_stick
+  component_color_theme: element-symbol
+```
+
+Example of exact non-contiguous residues:
+
+```yaml
+- name: Catalytic triad
+  positions: [42, 77, 105]
+  color: "#FACC15"
+  component_representation: ball_and_stick
+  component_color_theme: element-symbol
 ```
 
 ## Per-region component examples
@@ -370,6 +567,8 @@ Create a surface component only for one domain:
   color: "#0EA5E9"
   component_name: Membrane-facing surface
   component_representation: surface
+  component_color_theme: uniform
+  component_color: "#0EA5E9"
   component_opacity: 0.65
 ```
 
@@ -381,10 +580,10 @@ viewer:
 
 regions:
   - name: Active site
-    start: 45
-    end: 52
+    positions: [45, 48, 52]
     color: "#DC2626"
     component_representation: ball_and_stick
+    component_color_theme: element-symbol
     component_visible: true
 ```
 
@@ -426,6 +625,17 @@ Apply one region to several chains:
   color: "#F59E0B"
 ```
 
+The same rule applies to exact lists:
+
+```yaml
+- name: Shared catalytic residues
+  chains: [A, B]
+  positions: [12, 38, 74]
+  color: "#DC2626"
+```
+
+Every listed position is requested independently in every listed chain. Use separate region entries when different chains require different position lists.
+
 Apply a region to every chain by omitting `default_chain`, `chain`, and `chains`, or by writing:
 
 ```yaml
@@ -452,13 +662,13 @@ numbering: label
 
 Uses sequential polymer residue numbering generated by Mol*. This generally starts at 1 for each polymer chain and avoids gaps.
 
-The application performs a lightweight PDB-side coverage check. For `label` ranges, this check approximates Mol* label numbering by residue order in each PDB chain. Mol* remains the source of truth for the rendered selector.
+The application performs a lightweight PDB-side coverage check. For `label` ranges and exact positions, this check approximates Mol* label numbering by residue order in each PDB chain. Mol* remains the source of truth for the rendered selector.
 
-Version 1 of this YAML format accepts integer ranges. It does not separately target insertion codes such as `42A` versus `42B`; an `auth` range containing residue number 42 can include matching insertion-code residues.
+Version 1 of this YAML format accepts integer range endpoints and integer exact positions. It does not separately target insertion codes such as `42A` versus `42B`; an `auth` range or exact position containing residue number 42 can include matching insertion-code residues.
 
-## Overlapping regions
+## Overlapping selections
 
-Base-view colors are applied in YAML order. When two enabled regions overlap, the later entry takes color priority in the overlapping residues.
+Base-view colors are applied in YAML order. When two enabled selections overlap—whether ranges, exact-position lists, or a mixture—the later entry takes color priority in the overlapping residues.
 
 ```yaml
 regions:
@@ -474,6 +684,21 @@ regions:
 ```
 
 Residues 45–52 appear red in the base view because the active-site entry comes later.
+
+An exact-position entry behaves the same way:
+
+```yaml
+- name: Domain
+  start: 1
+  end: 100
+  color: "#2563EB"
+
+- name: Key residues
+  positions: [12, 45, 88]
+  color: "#FACC15"
+```
+
+Only residues 12, 45, and 88 override the domain color.
 
 Independent region components remain separate even when their selectors overlap. This makes it possible to toggle or restyle each overlapping region independently.
 
@@ -532,21 +757,26 @@ These limits are defined at the top of `app.js` and can be adjusted for trusted 
 The application rejects malformed YAML and invalid region definitions, including:
 
 - missing `regions` list;
-- missing name, range, or color;
-- non-integer residue numbers;
+- missing name, residue selection, or color;
+- non-integer range endpoints or exact positions;
 - `start` greater than `end`;
+- an empty or oversized `positions` list;
+- more than 25,000 generated selector expressions after chain expansion;
+- combining `positions` with `start`/`end` or `residue` in one entry;
 - unsupported base or component representation values;
+- unsupported component color-theme names;
+- malformed or excessively large native theme-parameter mappings;
 - unsupported selector values;
 - component opacity outside `0`–`1`;
 - more than 250 YAML-generated component nodes;
 - invalid color syntax;
 - a PDB with no `ATOM` records.
 
-After parsing the PDB, each enabled region receives a lightweight residue-coverage check. `NO MATCH` in the legend means that no parsed PDB residue matched that chain/range combination. Common causes are:
+After parsing the PDB, each enabled region receives a lightweight residue-coverage check. `NO MATCH` means no residue matched the chain/selection combination. For `positions`, `PARTIAL` means that at least one requested position matched but one or more positions or explicit chains were missing. Common causes are:
 
 - the wrong chain identifier;
 - `auth`/`label` numbering mismatch;
-- a range outside the structure;
+- a range or exact position outside the structure;
 - a PDB containing only a fragment of the expected sequence.
 
 A warning does not prevent other valid regions from loading.
@@ -581,12 +811,12 @@ To force a fresh copy:
 The HTML uses version query strings:
 
 ```html
-<link rel="stylesheet" href="./styles.css?v=2">
-<script src="./config.js?v=2"></script>
-<script defer src="./app.js?v=2"></script>
+<link rel="stylesheet" href="./styles.css?v=4">
+<script src="./config.js?v=4"></script>
+<script defer src="./app.js?v=4"></script>
 ```
 
-After a future major update, change all three values from `v=2` to `v=3`.
+After a future major update, change all three values from `v=4` to `v=5`.
 
 ## Browser console API
 
@@ -600,18 +830,18 @@ ProteinRegionViewer.reload()
 ProteinRegionViewer.setLayout('full')
 ```
 
-`getState()` returns file names, layout, region ranges, colors, chains, residue coverage, component creation state, component name, representation, opacity, and initial visibility.
+`getState()` returns file names, layout, each region selection type, range endpoints or exact positions, base colors, chains, matched and requested residue counts, coverage completeness, component creation state, component name, representation, native color theme, theme parameters, fixed component color, opacity, and initial visibility.
 
 ## Technical implementation
 
-The browser parses YAML with `js-yaml`, validates it, and translates each enabled region into a MolViewSpec residue selector.
+The browser parses YAML with `js-yaml`, validates it, and translates each enabled range or exact-position set into a MolViewSpec residue selector.
 
 The generated MolViewSpec scene contains:
 
 - one base component and base representation;
 - one color node per enabled YAML region on the base representation;
 - one additional component per region when `create_component` is enabled;
-- one independently colored representation under each generated region component, with optional opacity;
+- one independently colored representation under each generated region component, using either a fixed color, Mol* default coloring, or a native Mol* color theme, with optional opacity;
 - optional tooltip and label nodes.
 
 For `auth` numbering, selectors use:
@@ -634,6 +864,10 @@ For `label` numbering, selectors use:
 }
 ```
 
+An exact list such as `positions: [2, 10, 22]` is translated into a union of single-residue selectors (internally, adjacent exact positions may be compressed into equivalent short runs). The union remains one named component and one base-color layer.
+
+For native component color themes, the generated MolViewSpec color node uses Mol*'s official custom color-theme extension. For example, `component_color_theme: element-symbol` becomes a color node with `molstar_color_theme_name: element-symbol`; advanced YAML parameters are passed as `molstar_color_theme_params`. `component_color_theme: default` uses Mol*'s default-coloring flag, while `uniform` emits a normal fixed-color node.
+
 A small MolViewSpec custom loading extension reads metadata attached to the generated component and representation nodes. During scene loading it assigns the YAML component names and applies the initial hidden state when `component_visible: false`. This avoids fragile post-load matching by component position.
 
 The application pins Mol* `5.11.0` and `js-yaml` `5.4.1` in `index.html` for reproducible deployments.
@@ -651,7 +885,7 @@ The application pins Mol* `5.11.0` and `js-yaml` `5.4.1` in `index.html` for rep
 ### The PDB loads, but no region is colored
 
 - Check whether the legend displays `NO MATCH`.
-- Confirm chain IDs and residue ranges.
+- Confirm chain IDs and residue ranges/exact positions.
 - Try changing `numbering: auth` to `numbering: label`, or vice versa.
 - Confirm the base selector is appropriate; `protein` excludes nucleic acids.
 
@@ -672,6 +906,17 @@ components_visible: false
 ```
 
 Use the eye control beside the desired region representation. Hide `Base structure` to view that region by itself. Alternatively, set `component_visible: true` for one region or `components_visible: true` globally.
+
+### A ball-and-stick component is still one solid color
+
+- Set `component_color_theme: element-symbol` on that region.
+- Confirm the component is visible and that you are looking at the independent region component, not only the base cartoon.
+- Reload after editing the YAML.
+- Check the browser console for an unsupported theme or malformed `component_color_theme_params` message.
+
+### A native color theme does not look as expected
+
+Theme applicability depends on the structure data. For example, occupancy and uncertainty themes need corresponding values in the PDB, and some chain/entity themes are more informative for multichain structures. Start with `element-symbol` without parameters to verify the mechanism, then add advanced parameters only when needed.
 
 ### The sequence panel is missing
 
