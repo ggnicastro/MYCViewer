@@ -11,7 +11,7 @@ viewer:
   selector: protein
   base_color: "#FFFFFF"
   background: "#FFFFFF"
-  opacity: 0.2
+  base_opacity: 0.20
   show_labels: false
   show_tooltips: true
 
