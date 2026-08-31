@@ -1,6 +1,6 @@
 # Mol* PDB + YAML Protein Region Viewer
 
-A static, browser-based Mol* Viewer application that loads one PDB structure and one YAML annotation file, colors inclusive residue ranges or exact residue-position sets, and creates a separately named Mol* component for every enabled region.
+A static, browser-based Mol* Viewer application that loads one PDB structure and one YAML annotation file. The YAML can color inclusive residue ranges or exact residue-position sets, control the opacity and visual style of the complete base structure, and create a separately named Mol* component for every enabled region.
 
 The project is designed for GitHub Pages and does not require a build step, backend, database, or API key. Hosted files can load automatically from the repository. Local PDB/YAML pairs are processed only inside the browser tab.
 
@@ -8,25 +8,29 @@ The project is designed for GitHub Pages and does not require a build step, back
 
 For one PDB/YAML pair, the viewer builds two complementary layers:
 
-1. **Colored base view** — one compact protein representation, with YAML range and exact-position selections colored in file order.
-2. **Named region components** — one independent Mol* component per enabled region, whether selected by a range or exact positions, each with its own selector, name, representation type, native Mol* color theme or fixed color, opacity, visibility, tooltip, and optional 3D label.
+1. **Base structure** — one named representation containing the selected protein or structure. It can use a normal or Mol* Illustrative style, a native Mol* color theme, YAML region-color overlays, and a global opacity from `0` to `1`.
+2. **Named region components** — one independent Mol* component per enabled region, whether selected by a range or exact positions. Each component can have its own name, representation, native color theme or fixed color, opacity, initial visibility, tooltip, and optional 3D label.
 
-The region components are hidden initially by default. This prevents their geometry from being drawn on top of the already colored base view. In a layout containing the Mol* **Controls** panel, use the eye control beside the region representation to show it, then hide **Base structure** to isolate that region.
+The base opacity and region-component opacity are intentionally separate. Use `viewer.base_opacity` for **Base structure** and `viewer.component_opacity` or per-region `component_opacity` for the independent region representations.
+
+The region components are hidden initially by default. This prevents their geometry from being drawn directly on top of the already colored base view. In a layout containing the Mol* **Controls** panel, use the eye control beside a region representation to show it, then hide **Base structure** to isolate that region.
 
 ## Features
 
 - Load one `.pdb` structure and one `.yaml`/`.yml` annotation file.
 - Define 1, 3, 5, 10, or any other practical number of residue regions.
-- Color every region on a single compact base representation.
-- Create one named Mol* component for every enabled YAML region.
-- Show, hide, focus, and restyle generated components from the standard Mol* controls.
-- Choose global or per-region component names, representation types, and opacity.
-- Use native Mol* color themes such as atom/element colors, chain colors, residue colors, secondary structure, sequence position, hydrophobicity, and uncertainty.
-- Keep a fixed region color on the base cartoon while using a different theme on its independent component.
-- Choose whether components start visible or hidden.
 - Use inclusive `start` and `end` residue numbers for continuous ranges.
 - Use `positions: [2, 10, 22]` for exact, non-contiguous residues.
-- Mix range entries and exact-position entries in the same YAML file.
+- Mix range entries, exact-position entries, and one-residue entries in the same YAML file.
+- Color every region on one complete base representation.
+- Change the complete base representation opacity with `base_opacity`.
+- Start with the built-in Mol* Illustrative look using `style: illustrative`.
+- Override the base representation, color theme, representation parameters, and postprocessing when needed.
+- Create one named Mol* component for every enabled YAML region.
+- Show, hide, focus, and restyle generated components from the standard Mol* controls.
+- Choose global or per-region component names, representation types, color themes, opacity, and visibility.
+- Use native Mol* color themes such as atom/element colors, chain colors, residue colors, secondary structure, sequence position, hydrophobicity, and uncertainty.
+- Keep a fixed region color on the base representation while using a different theme on its independent component.
 - Select author/PDB numbering (`auth`) or sequential Mol* numbering (`label`).
 - Apply regions to one chain, multiple chains, or all chains.
 - Add descriptions, hover tooltips, and optional 3D labels.
@@ -112,7 +116,7 @@ Set `autoLoad: false` and leave both URLs empty to use the application only as a
 
 ## YAML annotation format
 
-Minimal example with generated components:
+Minimal example using a translucent Illustrative base and generated region components:
 
 ```yaml
 version: 1
@@ -121,8 +125,13 @@ numbering: auth
 default_chain: A
 
 viewer:
-  representation: cartoon
-  base_color: "#CBD5E1"
+  # default | illustrative
+  style: illustrative
+
+  # When style is illustrative and representation is omitted, the base
+  # defaults to spacefill. Set representation explicitly to override it.
+  selector: protein
+  base_opacity: 0.35
   background: "#FFFFFF"
 
   create_components: true
@@ -144,7 +153,7 @@ regions:
     component_name: Catalytic residue atoms
     component_representation: ball_and_stick
     component_color_theme: element-symbol
-    component_opacity: 0.9
+    component_opacity: 1.0
     component_visible: true
 
   - name: C-terminal domain
@@ -231,13 +240,31 @@ All forms use the same `numbering`, `default_chain`, `chain`, and `chains` rules
 
 ```yaml
 viewer:
-  representation: cartoon
+  # Base-style preset for this project: default | illustrative
+  style: illustrative
+
+  # Optional. Illustrative defaults to spacefill when this is omitted.
+  # representation: spacefill
   selector: protein
+
+  # Complete Base structure representation
+  base_opacity: 0.35
+  # base_color_theme: illustrative
   base_color: "#CBD5E1"
   background: "#FFFFFF"
+
+  # Optional advanced overrides
+  # base_color_theme_params: {}
+  # base_representation_params:
+  #   ignoreLight: true
+  # postprocessing:
+  #   enable_outline: true
+  #   enable_ssao: true
+
   show_labels: false
   show_tooltips: true
 
+  # Independent region components
   create_components: true
   component_representation: cartoon
   component_color_theme: uniform
@@ -250,20 +277,26 @@ viewer:
 
 | Property | Default | Description |
 |---|---|---|
-| `representation` | `cartoon` | Representation used by the compact colored base view. |
+| `style` | `default` | Base-style preset: `default` or `illustrative`. Aliases include `quick_style`, `preset`, and `base_style`. |
+| `representation` | `cartoon`; `spacefill` under Illustrative | Representation used by the complete colored base view. An explicit value overrides the style default. |
 | `selector` | `protein` | Part of the structure that receives the base representation. |
-| `base_color` | `#CBD5E1` | Color used outside annotated regions. |
+| `base_opacity` | `1.0` | Opacity of the complete **Base structure** representation, from `0` to `1`. Alias: `base_component_opacity`. |
+| `base_color_theme` | `uniform`; `illustrative` under Illustrative | Native Mol* color theme used outside YAML region-color overlays. |
+| `base_color` | `#CBD5E1` | Fixed color used when `base_color_theme: uniform`. |
+| `base_color_theme_params` | style-dependent | Optional mapping passed to the native base color theme. |
+| `base_representation_params` | style-dependent | Optional mapping passed to the Mol* base representation. Explicit values are merged over style defaults. |
+| `postprocessing` | style-dependent | Optional Mol* canvas postprocessing mapping. Illustrative enables outline and SSAO by default. |
 | `background` | `#FFFFFF` | Mol* canvas background color. |
 | `show_labels` | `false` | Global default for 3D region labels. |
 | `show_tooltips` | `true` | Global default for region hover tooltips. |
 | `create_components` | `true` | Creates a separately named Mol* component for every enabled region. |
-| `component_representation` | same as `representation` | Default representation type for generated region components. |
+| `component_representation` | same as base representation | Default representation type for generated region components. |
 | `component_color_theme` | `uniform` | Native Mol* color theme for generated components. `uniform` uses a fixed color; `default` delegates to Mol*. |
 | `component_color` | region `color` | Optional fixed component color used when the theme is `uniform`. |
-| `component_color_theme_params` | none | Optional YAML mapping passed to Mol* as native color-theme parameters. |
+| `component_color_theme_params` | none | Optional mapping passed to Mol* as native color-theme parameters. |
 | `components_visible` | `false` | Determines whether generated component representations are visible immediately after loading. |
-| `component_opacity` | `1.0` | Default opacity of generated component representations, from `0` to `1`. |
-| `base_component_name` | `Base structure` | Name assigned to the compact base component in Mol*. |
+| `component_opacity` | `1.0` | Default opacity of generated region-component representations, from `0` to `1`. |
+| `base_component_name` | `Base structure` | Name assigned to the complete base component in Mol*. |
 
 Supported representation values:
 
@@ -294,7 +327,112 @@ coarse
 
 Colors may be six-digit hexadecimal values such as `#2563EB`, three-digit shorthand such as `#26E`, or X11 color names such as `red` and `steelblue`.
 
+## Base structure opacity
+
+Use `base_opacity` to control only the complete named **Base structure** representation:
+
+```yaml
+viewer:
+  base_opacity: 0.35
+```
+
+Accepted values range from `0` to `1`:
+
+```text
+0.00 = fully transparent
+0.35 = 35% opaque
+1.00 = fully opaque
+```
+
+The opacity applies to the whole base representation, including the color layers added by the region entries. It does not alter the independent region components.
+
+To keep a translucent overview while displaying selected regions opaquely:
+
+```yaml
+viewer:
+  base_opacity: 0.25
+  component_opacity: 1.0
+  components_visible: false
+
+regions:
+  - name: Active site
+    positions: [42, 77, 105]
+    color: "#FACC15"
+    component_representation: ball_and_stick
+    component_color_theme: element-symbol
+    component_opacity: 1.0
+    component_visible: true
+```
+
+`component_opacity` is the global default for independent region representations. A region-level `component_opacity` overrides that default. Neither property changes `base_opacity`.
+
+## Mol* Illustrative base style
+
+The project provides a compact YAML switch for the main ingredients of Mol*'s Illustrative quick style:
+
+```yaml
+viewer:
+  style: illustrative
+```
+
+When no explicit overrides are present, this selects:
+
+- `spacefill` for the base representation;
+- the native Mol* `illustrative` color theme;
+- the theme's entity-based coloring with water override;
+- `ignoreLight: true` on the representation;
+- outline postprocessing;
+- SSAO/occlusion postprocessing.
+
+The closest configuration to the standard Mol* Illustrative quick style is therefore:
+
+```yaml
+viewer:
+  style: illustrative
+  selector: all
+  base_opacity: 1.0
+  background: "#FFFFFF"
+```
+
+For an illustrative-colored cartoon instead of the standard spacefill geometry, set the representation explicitly:
+
+```yaml
+viewer:
+  style: illustrative
+  representation: cartoon
+  selector: protein
+  base_opacity: 0.45
+```
+
+Explicit properties override or extend the style defaults:
+
+```yaml
+viewer:
+  style: illustrative
+  representation: spacefill
+  base_color_theme: illustrative
+  base_opacity: 0.35
+
+  base_color_theme_params:
+    style:
+      name: chain-id
+      params:
+        asymId: auth
+        overrideWater: true
+
+  base_representation_params:
+    ignoreLight: true
+
+  postprocessing:
+    enable_outline: true
+    enable_ssao: true
+```
+
+Setting `component_color_theme: illustrative` on a region affects only that independent component's color theme. It does not by itself activate the base spacefill preset, ignore-light rendering, outline, or SSAO; use `viewer.style: illustrative` for the complete base style.
+
 ## Native Mol* component color themes
+
+This section controls the independent region components. For the complete base-view preset, see **Mol* Illustrative base style** above.
 
 The region `color` always controls two things:
 
@@ -811,12 +949,12 @@ To force a fresh copy:
 The HTML uses version query strings:
 
 ```html
-<link rel="stylesheet" href="./styles.css?v=4">
-<script src="./config.js?v=4"></script>
-<script defer src="./app.js?v=4"></script>
+<link rel="stylesheet" href="./styles.css?v=5">
+<script src="./config.js?v=5"></script>
+<script defer src="./app.js?v=5"></script>
 ```
 
-After a future major update, change all three values from `v=4` to `v=5`.
+After a future project update, change all three values together, for example from `v=5` to `v=6`.
 
 ## Browser console API
 
@@ -830,7 +968,7 @@ ProteinRegionViewer.reload()
 ProteinRegionViewer.setLayout('full')
 ```
 
-`getState()` returns file names, layout, each region selection type, range endpoints or exact positions, base colors, chains, matched and requested residue counts, coverage completeness, component creation state, component name, representation, native color theme, theme parameters, fixed component color, opacity, and initial visibility.
+`getState()` returns the loaded file names, layout, normalized base-view settings, and the normalized region settings. The base-view object includes `style`, representation, selector, base color theme, base opacity, representation parameters, postprocessing, and component name. Each region includes its selection type, ranges or exact positions, chains, matching coverage, component representation, color theme, fixed color, opacity, and initial visibility.
 
 ## Technical implementation
 
@@ -838,8 +976,12 @@ The browser parses YAML with `js-yaml`, validates it, and translates each enable
 
 The generated MolViewSpec scene contains:
 
-- one base component and base representation;
+- one named base component and base representation;
+- a native or fixed base color theme;
+- an optional MVS opacity node for `base_opacity`;
 - one color node per enabled YAML region on the base representation;
+- optional Mol* representation custom parameters such as `ignoreLight`;
+- optional canvas postprocessing such as outline and SSAO;
 - one additional component per region when `create_component` is enabled;
 - one independently colored representation under each generated region component, using either a fixed color, Mol* default coloring, or a native Mol* color theme, with optional opacity;
 - optional tooltip and label nodes.
@@ -864,11 +1006,13 @@ For `label` numbering, selectors use:
 }
 ```
 
-An exact list such as `positions: [2, 10, 22]` is translated into a union of single-residue selectors (internally, adjacent exact positions may be compressed into equivalent short runs). The union remains one named component and one base-color layer.
+An exact list such as `positions: [2, 10, 22]` is translated into a union of single-residue selectors. Internally, adjacent exact positions may be compressed into equivalent short runs. The union remains one named component and one base-color layer.
 
-For native component color themes, the generated MolViewSpec color node uses Mol*'s official custom color-theme extension. For example, `component_color_theme: element-symbol` becomes a color node with `molstar_color_theme_name: element-symbol`; advanced YAML parameters are passed as `molstar_color_theme_params`. `component_color_theme: default` uses Mol*'s default-coloring flag, while `uniform` emits a normal fixed-color node.
+For native color themes, the generated MolViewSpec color node uses Mol* custom color-theme properties. For example, `component_color_theme: element-symbol` becomes `molstar_color_theme_name: element-symbol`; advanced YAML parameters are passed as `molstar_color_theme_params`. `component_color_theme: default` uses Mol* default coloring, while `uniform` emits a normal fixed-color node.
 
-A small MolViewSpec custom loading extension reads metadata attached to the generated component and representation nodes. During scene loading it assigns the YAML component names and applies the initial hidden state when `component_visible: false`. This avoids fragile post-load matching by component position.
+Base representation parameters are passed through `molstar_representation_params`, and base canvas effects are passed through `molstar_postprocessing`. The Illustrative style supplies defaults for these mappings, while explicit YAML values are merged over them.
+
+A small MolViewSpec custom loading extension reads metadata attached to generated component and representation nodes. During scene loading it assigns YAML component names and applies the initial hidden state when `component_visible: false`. This avoids fragile post-load matching by component position.
 
 The application pins Mol* `5.11.0` and `js-yaml` `5.4.1` in `index.html` for reproducible deployments.
 
@@ -888,6 +1032,45 @@ The application pins Mol* `5.11.0` and `js-yaml` `5.4.1` in `index.html` for rep
 - Confirm chain IDs and residue ranges/exact positions.
 - Try changing `numbering: auth` to `numbering: label`, or vice versa.
 - Confirm the base selector is appropriate; `protein` excludes nucleic acids.
+
+### Changing `component_opacity` does not change Base structure
+
+That is expected. The two layers use separate properties:
+
+```yaml
+viewer:
+  base_opacity: 0.35       # complete Base structure
+  component_opacity: 1.0  # default for independent regions
+```
+
+A per-region `component_opacity` changes only that region's independent representation.
+
+### Base structure is still fully opaque
+
+- Confirm `base_opacity` is nested under `viewer:`.
+- Use a number from `0` to `1`, not a percentage such as `35`.
+- Confirm the deployed YAML is the file referenced by `config.js`.
+- Reload after GitHub Actions completes; on Safari, empty the cache.
+- Inspect `ProteinRegionViewer.getState().current.viewer.baseOpacity` in the browser console.
+
+### `style: illustrative` still shows a cartoon
+
+An explicit `representation: cartoon` overrides the style's `spacefill` default. Remove that line or use:
+
+```yaml
+viewer:
+  style: illustrative
+  representation: spacefill
+```
+
+Also confirm the property is nested under `viewer:` and reload the YAML after editing it.
+
+### The colors are illustrative, but there is no outline or occlusion
+
+- Use `viewer.style: illustrative`, not only `component_color_theme: illustrative`.
+- Confirm you are running the updated `app.js` and `index.html` with `?v=5`.
+- Check that advanced `postprocessing` values have not explicitly disabled `enable_outline` or `enable_ssao`.
+- Verify WebGL2 and hardware acceleration are available.
 
 ### The components do not appear in the interface
 
@@ -910,7 +1093,7 @@ Use the eye control beside the desired region representation. Hide `Base structu
 ### A ball-and-stick component is still one solid color
 
 - Set `component_color_theme: element-symbol` on that region.
-- Confirm the component is visible and that you are looking at the independent region component, not only the base cartoon.
+- Confirm the component is visible and that you are looking at the independent region component, not only the base representation.
 - Reload after editing the YAML.
 - Check the browser console for an unsupported theme or malformed `component_color_theme_params` message.
 

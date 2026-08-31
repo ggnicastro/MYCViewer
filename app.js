@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '1.4.0';
+  const APP_VERSION = '1.5.0';
   const MAX_PDB_BYTES = 50 * 1024 * 1024;
   const MAX_YAML_BYTES = 2 * 1024 * 1024;
   const MAX_REGIONS = 1000;
@@ -11,7 +11,9 @@
   const REGION_COMPONENT_CUSTOM_KEY = 'protein_region_viewer_component';
   const DEFAULT_LAYOUT = 'sequence-controls';
   const DEFAULT_BASE_COLOR = '#CBD5E1';
+  const DEFAULT_BASE_OPACITY = 1;
   const DEFAULT_BACKGROUND = '#FFFFFF';
+  const DEFAULT_VIEWER_STYLE = 'default';
 
   const LAYOUTS = Object.freeze({
     canvas: Object.freeze({
@@ -44,7 +46,23 @@
   const REPRESENTATIONS = new Set([
     'cartoon', 'backbone', 'ball_and_stick', 'line', 'spacefill', 'carbohydrate', 'surface', 'putty'
   ]);
+  const VIEWER_STYLES = new Set(['default', 'illustrative']);
   const BASE_SELECTORS = new Set(['all', 'polymer', 'protein', 'nucleic', 'branched', 'ligand', 'ion', 'water', 'coarse']);
+
+  // The built-in Mol* Illustrative quick style uses spacefill geometry, the
+  // illustrative color theme, ignore-light rendering, outlines, and ambient
+  // occlusion. Explicit YAML values can override each of these defaults.
+  const ILLUSTRATIVE_COLOR_THEME_PARAMS = Object.freeze({
+    style: Object.freeze({
+      name: 'entity-id',
+      params: Object.freeze({ overrideWater: true })
+    })
+  });
+  const ILLUSTRATIVE_REPRESENTATION_PARAMS = Object.freeze({ ignoreLight: true });
+  const ILLUSTRATIVE_POSTPROCESSING = Object.freeze({
+    enable_outline: true,
+    enable_ssao: true
+  });
 
   // Native Mol* structure color themes that are useful for PDB-backed
   // representations. `uniform` preserves the previous project behavior and
@@ -239,6 +257,18 @@
     return normalized;
   }
 
+  function normalizeViewerStyle(value, fallback = DEFAULT_VIEWER_STYLE, path = 'viewer.style') {
+    const raw = cleanString(value ?? fallback)
+      .toLowerCase()
+      .replaceAll('_', '-')
+      .replace(/\s+/g, '-');
+    const normalized = ['none', 'custom', 'normal'].includes(raw) ? 'default' : raw;
+    if (!VIEWER_STYLES.has(normalized)) {
+      throw new Error(`${path} "${raw}" is not supported. Use "default" or "illustrative".`);
+    }
+    return normalized;
+  }
+
   function normalizeComponentColorTheme(value, fallback = 'uniform', path = 'component_color_theme') {
     const raw = cleanString(value ?? fallback)
       .toLowerCase()
@@ -293,6 +323,23 @@
     const normalized = walk(value, path, 0);
     if (!isPlainObject(normalized)) throw new Error(`${path} must be a YAML object/mapping.`);
     return normalized;
+  }
+
+  function deepMergeObjects(...sources) {
+    const output = {};
+    for (const source of sources) {
+      if (!isPlainObject(source)) continue;
+      for (const [key, value] of Object.entries(source)) {
+        if (isPlainObject(value)) {
+          output[key] = deepMergeObjects(isPlainObject(output[key]) ? output[key] : {}, value);
+        } else if (Array.isArray(value)) {
+          output[key] = value.map(item => isPlainObject(item) ? deepMergeObjects(item) : item);
+        } else {
+          output[key] = value;
+        }
+      }
+    }
+    return Object.keys(output).length ? output : null;
   }
 
   function numberInRange(value, fallback, path, min = 0, max = 1) {
@@ -414,10 +461,46 @@
     if (!Array.isArray(regionsRaw)) throw new Error('The YAML file must contain a regions: list.');
     if (regionsRaw.length > MAX_REGIONS) throw new Error(`The YAML file contains more than ${MAX_REGIONS} regions.`);
 
+    const viewerStyleRaw = normalizeViewerStyle(
+      viewerRaw.style ?? viewerRaw.quick_style ?? viewerRaw.quickStyle ??
+        viewerRaw.preset ?? viewerRaw.base_style ?? viewerRaw.baseStyle,
+      DEFAULT_VIEWER_STYLE,
+      'viewer.style'
+    );
+    const representationDefault = viewerStyleRaw === 'illustrative' ? 'spacefill' : 'cartoon';
     const representationRaw = normalizeRepresentation(
-      viewerRaw.representation ?? raw.representation ?? 'cartoon',
-      'cartoon',
+      viewerRaw.representation ?? raw.representation ?? representationDefault,
+      representationDefault,
       'viewer.representation'
+    );
+    const baseColorThemeRaw = normalizeComponentColorTheme(
+      viewerRaw.base_color_theme ?? viewerRaw.baseColorTheme ??
+        viewerRaw.base_color_scheme ?? viewerRaw.baseColorScheme,
+      viewerStyleRaw === 'illustrative' ? 'illustrative' : 'uniform',
+      'viewer.base_color_theme'
+    );
+    const baseColorThemeParamsValue =
+      viewerRaw.base_color_theme_params ?? viewerRaw.baseColorThemeParams ??
+      viewerRaw.base_color_params ?? viewerRaw.baseColorParams;
+    const baseColorThemeParamsRaw = baseColorThemeParamsValue !== undefined
+      ? normalizeThemeParams(baseColorThemeParamsValue, 'viewer.base_color_theme_params')
+      : baseColorThemeRaw === 'illustrative'
+        ? deepMergeObjects(ILLUSTRATIVE_COLOR_THEME_PARAMS)
+        : null;
+    const baseRepresentationParamsRaw = deepMergeObjects(
+      viewerStyleRaw === 'illustrative' ? ILLUSTRATIVE_REPRESENTATION_PARAMS : null,
+      normalizeThemeParams(
+        viewerRaw.base_representation_params ?? viewerRaw.baseRepresentationParams ??
+          viewerRaw.representation_params ?? viewerRaw.representationParams,
+        'viewer.base_representation_params'
+      )
+    );
+    const postprocessingRaw = deepMergeObjects(
+      viewerStyleRaw === 'illustrative' ? ILLUSTRATIVE_POSTPROCESSING : null,
+      normalizeThemeParams(
+        viewerRaw.postprocessing ?? viewerRaw.post_processing ?? viewerRaw.postProcessing,
+        'viewer.postprocessing'
+      )
     );
     const componentRepresentationRaw = normalizeRepresentation(
       viewerRaw.component_representation ?? viewerRaw.componentRepresentation,
@@ -443,9 +526,20 @@
       numbering: globalNumbering,
       defaultChains,
       viewer: {
+        style: viewerStyleRaw,
         representation: representationRaw,
         selector: baseSelector,
         baseColor: normalizeColor(viewerRaw.base_color ?? viewerRaw.baseColor ?? raw.base_color, DEFAULT_BASE_COLOR, 'viewer.base_color'),
+        baseColorTheme: baseColorThemeRaw,
+        baseColorThemeParams: baseColorThemeParamsRaw,
+        baseOpacity: numberInRange(
+          viewerRaw.base_opacity ?? viewerRaw.baseOpacity ??
+            viewerRaw.base_component_opacity ?? viewerRaw.baseComponentOpacity,
+          DEFAULT_BASE_OPACITY,
+          'viewer.base_opacity'
+        ),
+        baseRepresentationParams: baseRepresentationParamsRaw,
+        postprocessing: postprocessingRaw,
         background: normalizeColor(viewerRaw.background ?? raw.background, DEFAULT_BACKGROUND, 'viewer.background'),
         showLabels: toBoolean(viewerRaw.show_labels ?? viewerRaw.showLabels ?? raw.show_labels, false),
         showTooltips: toBoolean(viewerRaw.show_tooltips ?? viewerRaw.showTooltips ?? raw.show_tooltips, true),
@@ -764,24 +858,38 @@
     return region.enabled && (region.createComponent || region.tooltip || region.label);
   }
 
-  function applyComponentColor(representation, region) {
-    if (region.componentColorTheme === 'uniform') {
-      representation.color({ color: region.componentColor });
+  function applyRepresentationColor(representation, theme, uniformColor, themeParams) {
+    if (theme === 'uniform') {
+      representation.color({ color: uniformColor });
       return;
     }
-    if (region.componentColorTheme === 'default') {
+    if (theme === 'default') {
       representation.color({
         custom: { molstar_use_default_coloring: true }
       });
       return;
     }
-    const custom = {
-      molstar_color_theme_name: region.componentColorTheme
-    };
-    if (region.componentColorThemeParams) {
-      custom.molstar_color_theme_params = region.componentColorThemeParams;
-    }
+    const custom = { molstar_color_theme_name: theme };
+    if (themeParams) custom.molstar_color_theme_params = themeParams;
     representation.color({ custom });
+  }
+
+  function applyComponentColor(representation, region) {
+    applyRepresentationColor(
+      representation,
+      region.componentColorTheme,
+      region.componentColor,
+      region.componentColorThemeParams
+    );
+  }
+
+  function applyBaseColor(representation, viewer) {
+    applyRepresentationColor(
+      representation,
+      viewer.baseColorTheme,
+      viewer.baseColor,
+      viewer.baseColorThemeParams
+    );
   }
 
   function buildMvsData(pdbObjectUrl, annotation) {
@@ -791,7 +899,13 @@
     }
 
     const builder = extension.MVSData.createBuilder();
-    builder.canvas({ background_color: annotation.viewer.background });
+    const canvasParams = { background_color: annotation.viewer.background };
+    if (annotation.viewer.postprocessing) {
+      canvasParams.custom = {
+        molstar_postprocessing: annotation.viewer.postprocessing
+      };
+    }
+    builder.canvas(canvasParams);
     const structure = builder
       .download({ url: pdbObjectUrl })
       .parse({ format: 'pdb' })
@@ -807,8 +921,20 @@
         }
       }
     });
-    const representation = component.representation({ type: annotation.viewer.representation });
-    representation.color({ color: annotation.viewer.baseColor });
+    const baseRepresentationParams = {
+      type: annotation.viewer.representation,
+      ref: 'yaml-base-representation'
+    };
+    if (annotation.viewer.baseRepresentationParams) {
+      baseRepresentationParams.custom = {
+        molstar_representation_params: annotation.viewer.baseRepresentationParams
+      };
+    }
+    const representation = component.representation(baseRepresentationParams);
+    applyBaseColor(representation, annotation.viewer);
+    if (annotation.viewer.baseOpacity < 1) {
+      representation.opacity({ opacity: annotation.viewer.baseOpacity });
+    }
 
     for (const region of annotation.regions) {
       if (!region.enabled) continue;
@@ -1017,7 +1143,18 @@
     grid.className = 'summary-grid';
     appendSummaryRow(grid, 'Numbering', annotation.numbering === 'auth' ? 'Author/PDB residue IDs' : 'Sequential label IDs');
     appendSummaryRow(grid, 'Chains in PDB', chainLabels);
-    appendSummaryRow(grid, 'Base view', `${annotation.viewer.representation.replaceAll('_', ' ')} · ${annotation.viewer.baseColor}`);
+    const baseColorDescription = annotation.viewer.baseColorTheme === 'uniform'
+      ? `uniform ${annotation.viewer.baseColor}`
+      : annotation.viewer.baseColorTheme === 'default'
+        ? 'Mol* default coloring'
+        : `Mol* ${annotation.viewer.baseColorTheme} theme`;
+    const styleDescription = annotation.viewer.style === 'illustrative' ? 'Illustrative preset' : 'Default style';
+    appendSummaryRow(
+      grid,
+      'Base view',
+      `${styleDescription} · ${annotation.viewer.representation.replaceAll('_', ' ')} · ` +
+        `${baseColorDescription} · ${Math.round(annotation.viewer.baseOpacity * 100)}% opacity`
+    );
     const configuredComponents = enabledRegions.filter(region => region.createComponent);
     const matchingComponents = configuredComponents.filter(region => region.coverage.matched > 0);
     const visibleComponents = matchingComponents.filter(region => region.componentVisible).length;
@@ -1258,11 +1395,40 @@ numbering: auth
 default_chain: A
 
 viewer:
-  representation: cartoon
+  # Built-in viewer style:
+  # default      = normal rendering
+  # illustrative = Mol* Illustrative quick style defaults: spacefill,
+  #                illustrative colors, ignore-light, outlines, and SSAO
+  style: illustrative
+
+  # Optional. When style is illustrative and representation is omitted, the
+  # base structure defaults to spacefill. An explicit value overrides it.
+  # representation: spacefill
+  selector: protein
+
+  # Opacity of the complete named Base structure component, from 0 to 1.
+  # This does not change the opacity of independent region components.
+  base_opacity: 0.35
+
+  # Under the illustrative style this defaults to the native illustrative
+  # theme. Use uniform when you prefer one fixed base_color instead.
+  # base_color_theme: illustrative
   base_color: "#CBD5E1"
   background: "#FFFFFF"
   show_labels: false
   show_tooltips: true
+
+  # Optional advanced overrides:
+  # base_color_theme_params:
+  #   style:
+  #     name: entity-id
+  #     params:
+  #       overrideWater: true
+  # base_representation_params:
+  #   ignoreLight: true
+  # postprocessing:
+  #   enable_outline: true
+  #   enable_ssao: true
 
   # Keep the colored base structure and also create one named Mol* component
   # for each region. Independent component representations are hidden initially
@@ -1399,7 +1565,7 @@ regions:
 
   async function initializeViewer() {
     elements.brandTitle.textContent = config.title;
-    elements.brandSubtitle.textContent = 'PDB + YAML region components';
+    elements.brandSubtitle.textContent = 'PDB + YAML regions + base styles';
     elements.pageTitle.textContent = config.title;
     elements.pageSubtitle.textContent = config.subtitle;
     document.title = config.title;
@@ -1465,6 +1631,18 @@ regions:
         yamlName: state.current.yamlName,
         title: state.current.annotation.title,
         regionCount: state.current.annotation.regions.filter(region => region.enabled).length,
+        viewer: {
+          style: state.current.annotation.viewer.style,
+          representation: state.current.annotation.viewer.representation,
+          selector: state.current.annotation.viewer.selector,
+          baseColor: state.current.annotation.viewer.baseColor,
+          baseColorTheme: state.current.annotation.viewer.baseColorTheme,
+          baseColorThemeParams: state.current.annotation.viewer.baseColorThemeParams,
+          baseOpacity: state.current.annotation.viewer.baseOpacity,
+          baseRepresentationParams: state.current.annotation.viewer.baseRepresentationParams,
+          postprocessing: state.current.annotation.viewer.postprocessing,
+          baseComponentName: state.current.annotation.viewer.baseComponentName
+        },
         regions: state.current.annotation.regions.map(region => ({
           name: region.name,
           selectionType: region.selectionType,

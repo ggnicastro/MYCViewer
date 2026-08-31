@@ -10,14 +10,41 @@ numbering: auth
 default_chain: A
 
 viewer:
-  # Base view shown when the structure opens.
+  # Built-in base style:
+  # default      = normal Mol* rendering
+  # illustrative = Mol* Illustrative quick-style defaults: spacefill,
+  #                native illustrative colors, ignore-light, outlines, and SSAO
+  style: illustrative
+
+  # Under style: illustrative, representation defaults to spacefill when this
+  # property is omitted. An explicit value overrides that default.
   # cartoon | backbone | ball_and_stick | line | spacefill | surface | putty
-  representation: cartoon
+  # representation: spacefill
   selector: protein
+
+  # Opacity of the complete named Base structure representation, from 0 to 1.
+  # It does not change the opacity of independent region components.
+  base_opacity: 0.35
+
+  # Under style: illustrative, base_color_theme defaults to illustrative.
+  # Use uniform when the non-annotated part should use one fixed base_color.
+  # base_color_theme: illustrative
   base_color: "#CBD5E1"
   background: "#FFFFFF"
   show_labels: false
   show_tooltips: true
+
+  # Optional advanced overrides. These are merged over the style defaults.
+  # base_color_theme_params:
+  #   style:
+  #     name: entity-id
+  #     params:
+  #       overrideWater: true
+  # base_representation_params:
+  #   ignoreLight: true
+  # postprocessing:
+  #   enable_outline: true
+  #   enable_ssao: true
 
   # Keep the colored base structure and also create one independently
   # controllable Mol* component for every enabled region.

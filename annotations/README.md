@@ -6,7 +6,106 @@ Place hosted `.yaml` or `.yml` annotation files in this directory and reference 
 yamlUrl: './annotations/my-protein-regions.yaml'
 ```
 
-Start from `template.yaml`. Every region requires `name` and `color`, plus one residue-selection form.
+Start from `template.yaml`. Every enabled region requires `name` and `color`, plus exactly one residue-selection form.
+
+## Base structure settings
+
+The complete protein or structure is represented by the named Mol* component **Base structure**. Its style and opacity are configured inside `viewer`.
+
+### Base opacity
+
+```yaml
+viewer:
+  base_opacity: 0.35
+```
+
+`base_opacity` accepts a number from `0` to `1`:
+
+```text
+0.0 = fully transparent
+0.35 = 35% opaque
+1.0 = fully opaque
+```
+
+This property controls the complete base representation, including the region colors painted on it. It does not control the independent region components.
+
+Use `component_opacity` globally, or a per-region `component_opacity`, for those independent components:
+
+```yaml
+viewer:
+  base_opacity: 0.25
+  component_opacity: 1.0
+
+regions:
+  - name: Active site
+    positions: [42, 77, 105]
+    color: "#FACC15"
+    component_representation: ball_and_stick
+    component_color_theme: element-symbol
+    component_opacity: 1.0
+    component_visible: true
+```
+
+### Illustrative style
+
+Use the project-level style switch to start with the main ingredients of Mol*'s Illustrative quick style:
+
+```yaml
+viewer:
+  style: illustrative
+```
+
+When no explicit overrides are present, the base view uses:
+
+- a `spacefill` representation;
+- the native `illustrative` color theme;
+- ignore-light rendering;
+- outline postprocessing;
+- SSAO/occlusion postprocessing.
+
+A compact setup is:
+
+```yaml
+viewer:
+  style: illustrative
+  selector: protein
+  base_opacity: 0.35
+  background: "#FFFFFF"
+```
+
+An explicit representation overrides the Illustrative default. For example, this keeps the illustrative color and rendering treatment but uses cartoon geometry:
+
+```yaml
+viewer:
+  style: illustrative
+  representation: cartoon
+  selector: protein
+  base_opacity: 0.45
+```
+
+Advanced overrides are available:
+
+```yaml
+viewer:
+  style: illustrative
+
+  base_color_theme: illustrative
+  base_color_theme_params:
+    style:
+      name: chain-id
+      params:
+        asymId: auth
+        overrideWater: true
+
+  base_representation_params:
+    ignoreLight: true
+
+  postprocessing:
+    enable_outline: true
+    enable_ssao: true
+```
+
+`component_color_theme: illustrative` affects only one independent region component. Use `viewer.style: illustrative` when the complete base structure should receive the Illustrative preset behavior.
 
 ## Residue-selection forms
 
@@ -45,7 +144,7 @@ Accepted aliases for `positions` are `residues`, `residue_positions`, and `posit
 
 ## Chains and numbering
 
-The exact list follows the same `numbering`, `chain`, and `chains` rules as ranges:
+Exact lists follow the same `numbering`, `chain`, and `chains` rules as ranges:
 
 ```yaml
 numbering: auth
@@ -67,10 +166,11 @@ For multiple chains, the same position list is applied independently to every li
 
 ## Colored base view and named components
 
-By default, each enabled region is colored on the compact base representation **and** created as a named Mol* component. Exact positions in one entry remain one component, even when the residues are not contiguous.
+By default, each enabled region is colored on the complete base representation **and** created as a named Mol* component. Exact positions in one entry remain one component, even when the residues are not contiguous.
 
 ```yaml
 viewer:
+  base_opacity: 0.35
   create_components: true
   component_representation: cartoon
   component_color_theme: uniform
@@ -127,4 +227,4 @@ The application accepts up to:
 
 Exact-position selections receive per-position coverage validation. The legend shows `PARTIAL` when some requested residues are present and others are missing, and `NO MATCH` when none are found.
 
-See the project root `README.md` for all YAML properties, component options, layouts, hosted/local loading, and troubleshooting.
+See the project root `README.md` for all YAML properties, style overrides, component options, layouts, hosted/local loading, and troubleshooting.
