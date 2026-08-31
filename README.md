@@ -1,19 +1,33 @@
 # Mol* PDB + YAML Protein Region Viewer
 
-A static, browser-based Mol* Viewer application that loads a PDB structure and colors any number of residue ranges from a human-readable YAML annotation file.
+A static, browser-based Mol* Viewer application that loads one PDB structure and one YAML annotation file, colors residue ranges, and creates a separately named Mol* component for every enabled region.
 
-The project is designed for GitHub Pages and does not require a build step, backend, database, or API key. Hosted files can be loaded automatically from the repository, while local PDB/YAML pairs are processed only inside the browser tab.
+The project is designed for GitHub Pages and does not require a build step, backend, database, or API key. Hosted files can load automatically from the repository. Local PDB/YAML pairs are processed only inside the browser tab.
+
+## What the application creates
+
+For one PDB/YAML pair, the viewer builds two complementary layers:
+
+1. **Colored base view** — one compact protein representation, with YAML regions colored in file order.
+2. **Named region components** — one independent Mol* component per enabled region, each with its own selector, name, representation type, color, opacity, visibility, tooltip, and optional 3D label.
+
+The region components are hidden initially by default. This prevents their geometry from being drawn on top of the already colored base view. In a layout containing the Mol* **Controls** panel, use the eye control beside the region representation to show it, then hide **Base structure** to isolate that region.
 
 ## Features
 
 - Load one `.pdb` structure and one `.yaml`/`.yml` annotation file.
-- Define 1, 3, 5, 10, or any other number of colored regions.
+- Define 1, 3, 5, 10, or any other practical number of residue regions.
+- Color every region on a single compact base representation.
+- Create one named Mol* component for every enabled YAML region.
+- Show, hide, focus, and restyle generated components from the standard Mol* controls.
+- Choose global or per-region component names, representation types, and opacity.
+- Choose whether components start visible or hidden.
 - Use inclusive `start` and `end` residue numbers.
 - Select author/PDB numbering (`auth`) or sequential Mol* numbering (`label`).
 - Apply regions to one chain, multiple chains, or all chains.
-- Add optional descriptions, hover tooltips, and 3D labels.
-- Display a generated legend with range coverage and validation warnings.
-- Switch between 3D-only, sequence, controls, and full Mol* layouts.
+- Add descriptions, hover tooltips, and optional 3D labels.
+- Display a generated legend with component status, range coverage, and validation warnings.
+- Switch between 3D-only, sequence, controls, and full Mol* layouts without reloading the structure.
 - Load files from the repository automatically or select/drop local files.
 - Download the currently loaded PDB, YAML, or a clean YAML template.
 - Deploy directly with the included GitHub Pages workflow.
@@ -38,6 +52,7 @@ The project is designed for GitHub Pages and does not require a build step, back
 ├── index.html
 ├── LICENSE
 ├── README.md
+├── UPDATE.md
 └── styles.css
 ```
 
@@ -61,12 +76,12 @@ Opening `index.html` directly through a `file://` URL is not recommended because
 
 ## `config.js`
 
-`config.js` controls the title, automatic hosted-file loading, source paths, and initial Mol* layout.
+`config.js` controls the application title, automatic hosted-file loading, source paths, and initial Mol* layout.
 
 ```js
 window.PROTEIN_REGION_VIEWER_CONFIG = {
   title: 'Protein Region Viewer',
-  subtitle: 'Color PDB residue ranges from a YAML annotation file',
+  subtitle: 'Color PDB residue ranges and create named Mol* components from YAML',
 
   autoLoad: true,
   pdbUrl: './pdb/my-protein.pdb',
@@ -87,13 +102,13 @@ window.PROTEIN_REGION_VIEWER_CONFIG = {
 | `yamlUrl` | string | empty | Relative or CORS-enabled URL for the hosted YAML file. |
 | `defaultLayout` | string | `sequence-controls` | Initial Mol* interface layout. |
 
-For GitHub Pages, relative paths such as `./pdb/protein.pdb` are recommended. They continue to work when the site is hosted under `https://USER.github.io/REPOSITORY/`.
+For GitHub Pages, relative paths such as `./pdb/protein.pdb` are recommended. They continue to work when the site is hosted under a repository path.
 
 Set `autoLoad: false` and leave both URLs empty to use the application only as a local file viewer.
 
 ## YAML annotation format
 
-Minimal example:
+Minimal example with generated components:
 
 ```yaml
 version: 1
@@ -105,7 +120,12 @@ viewer:
   representation: cartoon
   base_color: "#CBD5E1"
   background: "#FFFFFF"
-  show_labels: false
+
+  create_components: true
+  component_representation: cartoon
+  components_visible: false
+  component_opacity: 1.0
+  base_component_name: Base structure
 
 regions:
   - name: N-terminal domain
@@ -117,6 +137,9 @@ regions:
     start: 86
     end: 170
     color: "#F97316"
+    component_name: Catalytic region atoms
+    component_representation: ball_and_stick
+    component_opacity: 0.9
 
   - name: C-terminal domain
     start: 171
@@ -124,9 +147,9 @@ regions:
     color: "#10B981"
 ```
 
-`start` and `end` are inclusive. The example above colors residues 1 through 85, including both endpoints.
+`start` and `end` are inclusive. The example colors residues 1 through 85, including both endpoints.
 
-The `regions` list has no fixed UI limit for normal use. The application accepts up to 1,000 entries as a defensive limit against accidental or maliciously large files.
+The `regions` list accepts up to 1,000 entries as a defensive limit. Because each component consumes Mol* state and rendering resources, the application also limits YAML-generated component nodes to 250. Disable `create_component`, `tooltip`, or `label` on entries that do not need independent component nodes.
 
 ## Top-level YAML properties
 
@@ -136,7 +159,7 @@ The `regions` list has no fixed UI limit for normal use. The application accepts
 | `title` | No | Annotation title shown above the viewer and legend. |
 | `numbering` | No | Global residue numbering mode: `auth` or `label`. Default: `auth`. |
 | `default_chain` | No | Default chain for regions that do not define their own chain. |
-| `viewer` | No | Base representation and display settings. |
+| `viewer` | No | Base view, component, tooltip, label, and canvas settings. |
 | `regions` | Yes | List of region objects. At least one enabled region is required. |
 
 ## Viewer settings in YAML
@@ -149,18 +172,29 @@ viewer:
   background: "#FFFFFF"
   show_labels: false
   show_tooltips: true
+
+  create_components: true
+  component_representation: cartoon
+  components_visible: false
+  component_opacity: 1.0
+  base_component_name: Base structure
 ```
 
 | Property | Default | Description |
 |---|---|---|
-| `representation` | `cartoon` | Base 3D representation. |
+| `representation` | `cartoon` | Representation used by the compact colored base view. |
 | `selector` | `protein` | Part of the structure that receives the base representation. |
 | `base_color` | `#CBD5E1` | Color used outside annotated regions. |
 | `background` | `#FFFFFF` | Mol* canvas background color. |
 | `show_labels` | `false` | Global default for 3D region labels. |
 | `show_tooltips` | `true` | Global default for region hover tooltips. |
+| `create_components` | `true` | Creates a separately named Mol* component for every enabled region. |
+| `component_representation` | same as `representation` | Default representation type for generated region components. |
+| `components_visible` | `false` | Determines whether generated component representations are visible immediately after loading. |
+| `component_opacity` | `1.0` | Default opacity of generated component representations, from `0` to `1`. |
+| `base_component_name` | `Base structure` | Name assigned to the compact base component in Mol*. |
 
-Supported `representation` values:
+Supported representation values:
 
 ```text
 cartoon
@@ -189,6 +223,81 @@ coarse
 
 Colors may be six-digit hexadecimal values such as `#2563EB`, three-digit shorthand such as `#26E`, or X11 color names such as `red` and `steelblue`.
 
+## Mol* region components
+
+Each enabled region can become a standard component in the Mol* structure hierarchy. Its name defaults to the YAML `name` field and can be overridden with `component_name`.
+
+With this YAML:
+
+```yaml
+regions:
+  - name: RNase H insertion
+    start: 120
+    end: 185
+    color: "#8B5CF6"
+
+  - name: Zinc-binding region
+    start: 240
+    end: 275
+    color: "#F59E0B"
+```
+
+Mol* receives components named:
+
+```text
+Base structure
+RNase H insertion
+Zinc-binding region
+```
+
+### Managing components in the viewer
+
+Choose one of these layouts:
+
+```text
+Controls + 3D
+Sequence + controls
+Full Mol* interface
+```
+
+Then use the right-side Mol* controls to:
+
+- show or hide an individual region;
+- focus the camera on a region;
+- change its representation type;
+- change its color or other visual parameters;
+- hide `Base structure` and isolate only selected regions.
+
+### Why components are hidden by default
+
+The base component already contains the complete protein and carries all YAML colors. Drawing every independent region component at the same time would duplicate geometry and can make the image heavier or visually confusing.
+
+The recommended default is therefore:
+
+```yaml
+viewer:
+  create_components: true
+  components_visible: false
+```
+
+The colored base view appears immediately, while the named components remain available in Mol* for interactive inspection.
+
+To show all region components immediately:
+
+```yaml
+viewer:
+  components_visible: true
+```
+
+To disable independent components and keep only base coloring:
+
+```yaml
+viewer:
+  create_components: false
+```
+
+Tooltips or 3D labels can still require internal selection nodes even when visual component representations are disabled.
+
 ## Region properties
 
 Canonical region syntax:
@@ -200,6 +309,13 @@ Canonical region syntax:
   start: 120
   end: 185
   color: "#8B5CF6"
+
+  create_component: true
+  component_name: RNA-binding insertion atoms
+  component_representation: ball_and_stick
+  component_opacity: 0.85
+  component_visible: false
+
   label: false
   tooltip: true
   description: Optional explanatory text.
@@ -208,13 +324,18 @@ Canonical region syntax:
 
 | Property | Required | Description |
 |---|---:|---|
-| `name` | Yes | Region name shown in the legend and tooltip. |
+| `name` | Yes | Region name shown in the legend, tooltip, and Mol* component hierarchy. |
 | `start` | Yes | First residue number, inclusive. |
 | `end` | Yes | Last residue number, inclusive. |
-| `color` | Yes | Region color. |
+| `color` | Yes | Region color for both the base color layer and generated component. |
 | `chain` | No | One chain identifier. Overrides `default_chain`. |
 | `chains` | No | List of chain identifiers, for example `[A, B]`. |
 | `numbering` | No | Per-region override: `auth` or `label`. |
+| `create_component` | No | Per-region override for independent component representation creation. |
+| `component_name` | No | Name shown for the region in the Mol* component hierarchy; defaults to `name`. |
+| `component_representation` | No | Per-region component representation override. |
+| `component_opacity` | No | Per-region opacity override from `0` to `1`. |
+| `component_visible` | No | Per-region initial visibility override. |
 | `label` | No | Adds the region name as a 3D label. |
 | `tooltip` | No | Enables/disables the region hover tooltip. |
 | `description` | No | Additional legend and tooltip text. |
@@ -222,11 +343,12 @@ Canonical region syntax:
 
 Convenience aliases are also accepted:
 
-- `begin` or `from` for `start`.
-- `stop` or `to` for `end`.
-- `colour` for `color`.
-- `chain_id` for `chain`.
-- `residue` for a one-residue region, replacing both `start` and `end`.
+- `begin` or `from` for `start`;
+- `stop` or `to` for `end`;
+- `colour` for `color`;
+- `chain_id` for `chain`;
+- `residue` for a one-residue region, replacing both `start` and `end`;
+- camelCase equivalents such as `createComponent`, `componentName`, `componentRepresentation`, `componentOpacity`, and `componentVisible`.
 
 Example of one residue:
 
@@ -234,6 +356,46 @@ Example of one residue:
 - name: Catalytic lysine
   residue: 42
   color: "#DC2626"
+  component_representation: ball_and_stick
+```
+
+## Per-region component examples
+
+Create a surface component only for one domain:
+
+```yaml
+- name: Membrane-facing domain
+  start: 20
+  end: 140
+  color: "#0EA5E9"
+  component_name: Membrane-facing surface
+  component_representation: surface
+  component_opacity: 0.65
+```
+
+Make an active site visible at startup while other components remain hidden:
+
+```yaml
+viewer:
+  components_visible: false
+
+regions:
+  - name: Active site
+    start: 45
+    end: 52
+    color: "#DC2626"
+    component_representation: ball_and_stick
+    component_visible: true
+```
+
+Keep one annotated range colored but omit its independent visual component:
+
+```yaml
+- name: Low-confidence tail
+  start: 300
+  end: 350
+  color: "#94A3B8"
+  create_component: false
 ```
 
 ## Chain selection
@@ -296,7 +458,7 @@ Version 1 of this YAML format accepts integer ranges. It does not separately tar
 
 ## Overlapping regions
 
-Region colors are applied in YAML order. When two enabled regions overlap, the later entry takes color priority in the overlapping residues.
+Base-view colors are applied in YAML order. When two enabled regions overlap, the later entry takes color priority in the overlapping residues.
 
 ```yaml
 regions:
@@ -311,7 +473,9 @@ regions:
     color: "#DC2626"
 ```
 
-Residues 45–52 appear red because the active-site entry comes later.
+Residues 45–52 appear red in the base view because the active-site entry comes later.
+
+Independent region components remain separate even when their selectors overlap. This makes it possible to toggle or restyle each overlapping region independently.
 
 ## Mol* layout options
 
@@ -325,7 +489,9 @@ The layout selector changes which standard Mol* interface regions are visible wi
 | `sequence-controls` | Sequence panel, 3D canvas, and right-side controls. |
 | `full` | Sequence, left data tree, right controls, and bottom log. |
 
-`sequence-controls` is the recommended default for protein inspection.
+`sequence-controls` is the recommended default because it exposes both the polymer sequence and the component controls.
+
+The generated components still exist in `canvas` or `sequence` layouts, but those layouts hide the right-side control panel used to manage them.
 
 ## Hosted repository mode
 
@@ -369,7 +535,10 @@ The application rejects malformed YAML and invalid region definitions, including
 - missing name, range, or color;
 - non-integer residue numbers;
 - `start` greater than `end`;
-- unsupported representation or selector values;
+- unsupported base or component representation values;
+- unsupported selector values;
+- component opacity outside `0`–`1`;
+- more than 250 YAML-generated component nodes;
 - invalid color syntax;
 - a PDB with no `ATOM` records.
 
@@ -380,7 +549,7 @@ After parsing the PDB, each enabled region receives a lightweight residue-covera
 - a range outside the structure;
 - a PDB containing only a fragment of the expected sequence.
 
-A warning does not prevent the other valid regions from loading.
+A warning does not prevent other valid regions from loading.
 
 ## GitHub Pages deployment
 
@@ -409,15 +578,15 @@ To force a fresh copy:
 2. Use **Develop → Empty Caches**.
 3. Reload with `Command + R`.
 
-The HTML already uses version query strings:
+The HTML uses version query strings:
 
 ```html
-<link rel="stylesheet" href="./styles.css?v=1">
-<script src="./config.js?v=1"></script>
-<script defer src="./app.js?v=1"></script>
+<link rel="stylesheet" href="./styles.css?v=2">
+<script src="./config.js?v=2"></script>
+<script defer src="./app.js?v=2"></script>
 ```
 
-After a major update, change all three values from `v=1` to `v=2`.
+After a future major update, change all three values from `v=2` to `v=3`.
 
 ## Browser console API
 
@@ -431,11 +600,19 @@ ProteinRegionViewer.reload()
 ProteinRegionViewer.setLayout('full')
 ```
 
-`getState()` returns file names, layout, region ranges, colors, chains, and the number of residues found by the lightweight PDB coverage check.
+`getState()` returns file names, layout, region ranges, colors, chains, residue coverage, component creation state, component name, representation, opacity, and initial visibility.
 
 ## Technical implementation
 
-The browser parses YAML with `js-yaml`, validates it, and translates each enabled region into a MolViewSpec residue selector. A base MolViewSpec representation is colored first, followed by one color node per region. The generated scene is passed to Mol* with `loadMVS(..., { replaceExisting: true })`.
+The browser parses YAML with `js-yaml`, validates it, and translates each enabled region into a MolViewSpec residue selector.
+
+The generated MolViewSpec scene contains:
+
+- one base component and base representation;
+- one color node per enabled YAML region on the base representation;
+- one additional component per region when `create_component` is enabled;
+- one independently colored representation under each generated region component, with optional opacity;
+- optional tooltip and label nodes.
 
 For `auth` numbering, selectors use:
 
@@ -457,6 +634,8 @@ For `label` numbering, selectors use:
 }
 ```
 
+A small MolViewSpec custom loading extension reads metadata attached to the generated component and representation nodes. During scene loading it assigns the YAML component names and applies the initial hidden state when `component_visible: false`. This avoids fragile post-load matching by component position.
+
 The application pins Mol* `5.11.0` and `js-yaml` `5.4.1` in `index.html` for reproducible deployments.
 
 ## Troubleshooting
@@ -475,6 +654,24 @@ The application pins Mol* `5.11.0` and `js-yaml` `5.4.1` in `index.html` for rep
 - Confirm chain IDs and residue ranges.
 - Try changing `numbering: auth` to `numbering: label`, or vice versa.
 - Confirm the base selector is appropriate; `protein` excludes nucleic acids.
+
+### The components do not appear in the interface
+
+- Choose `controls`, `sequence-controls`, or `full` so the right-side Mol* controls are visible.
+- Expand the structure/component section in the Mol* controls.
+- Confirm `viewer.create_components` is not `false`.
+- Confirm the region does not set `create_component: false`.
+- Reload after changing the YAML.
+
+### The components are listed but not visible in 3D
+
+This is the expected default when:
+
+```yaml
+components_visible: false
+```
+
+Use the eye control beside the desired region representation. Hide `Base structure` to view that region by itself. Alternatively, set `component_visible: true` for one region or `components_visible: true` globally.
 
 ### The sequence panel is missing
 

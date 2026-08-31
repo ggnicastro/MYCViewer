@@ -10,11 +10,26 @@ numbering: auth
 default_chain: A
 
 viewer:
+  # Base view shown when the structure opens.
   # cartoon | backbone | ball_and_stick | line | spacefill | surface | putty
   representation: cartoon
+  selector: protein
   base_color: "#CBD5E1"
   background: "#FFFFFF"
   show_labels: false
+  show_tooltips: true
+
+  # Keep the colored base structure and also create one independently
+  # controllable Mol* component for every enabled region.
+  create_components: true
+  component_representation: cartoon
+  component_opacity: 1.0
+
+  # false avoids drawing duplicate geometry over the already colored base
+  # view. Open a layout with Controls, show a region representation with its eye icon, and
+  # hide Base structure when you want to isolate that region.
+  components_visible: false
+  base_component_name: Base structure
 
 # Add as many region entries as needed. start and end are inclusive.
 regions:
@@ -28,12 +43,18 @@ regions:
     end: 50
     color: "#F97316"
 
-  # Per-region overrides are optional:
+  # Per-region component overrides are optional:
   # - name: Chain B domain
   #   chain: B
   #   numbering: auth
   #   start: 10
   #   end: 80
   #   color: "#10B981"
+  #   create_component: true
+  #   component_name: Chain B domain surface
+  #   component_representation: surface
+  #   component_opacity: 0.65
+  #   component_visible: false
   #   label: true
+  #   tooltip: true
   #   description: Optional text shown in the legend and hover tooltip.

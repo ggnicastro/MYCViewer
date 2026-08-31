@@ -1,10 +1,12 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.2.0';
   const MAX_PDB_BYTES = 50 * 1024 * 1024;
   const MAX_YAML_BYTES = 2 * 1024 * 1024;
   const MAX_REGIONS = 1000;
+  const MAX_COMPONENTS = 250;
+  const REGION_COMPONENT_CUSTOM_KEY = 'protein_region_viewer_component';
   const DEFAULT_LAYOUT = 'sequence-controls';
   const DEFAULT_BASE_COLOR = '#CBD5E1';
   const DEFAULT_BACKGROUND = '#FFFFFF';
@@ -41,6 +43,32 @@
     'cartoon', 'backbone', 'ball_and_stick', 'line', 'spacefill', 'carbohydrate', 'surface', 'putty'
   ]);
   const BASE_SELECTORS = new Set(['all', 'polymer', 'protein', 'nucleic', 'branched', 'ligand', 'ion', 'water', 'coarse']);
+
+  // MolViewSpec supports custom loading extensions. The YAML scene adds
+  // metadata to component and representation nodes; this extension converts
+  // that metadata into native Mol* component names and initial visibility.
+  const REGION_COMPONENT_MVS_EXTENSION = Object.freeze({
+    id: 'protein-region-viewer-components',
+    description: 'Name YAML-defined Mol* components and apply initial visibility',
+    createExtensionContext: () => ({}),
+    action: (updateTarget, node) => {
+      const metadata = node?.custom?.[REGION_COMPONENT_CUSTOM_KEY];
+      if (!isPlainObject(metadata)) return;
+
+      if (node.kind === 'component') {
+        const label = cleanString(metadata.label);
+        if (label) {
+          updateTarget.update.to(updateTarget.selector).update(params => {
+            if (params && typeof params === 'object') params.label = label;
+          });
+        }
+      }
+
+      if (metadata.hidden === true) {
+        updateTarget.update.to(updateTarget.selector).updateState({ isHidden: true });
+      }
+    }
+  });
 
   const elements = {
     brandTitle: document.getElementById('brandTitle'),
@@ -108,7 +136,7 @@
 
   function normalizeConfig(raw) {
     const title = cleanString(raw.title) || 'Protein Region Viewer';
-    const subtitle = cleanString(raw.subtitle) || 'Color PDB residue ranges from a YAML annotation file';
+    const subtitle = cleanString(raw.subtitle) || 'Color PDB residue ranges and create named Mol* components from YAML';
     return {
       title,
       subtitle,
@@ -153,6 +181,23 @@
       if (probe.style.color && !excluded.has(raw.toLowerCase())) return raw.toLowerCase();
     }
     throw new Error(`${path} must be a hexadecimal color such as #2563EB or a valid X11 color name.`);
+  }
+
+  function normalizeRepresentation(value, fallback, path) {
+    const normalized = cleanString(value ?? fallback).toLowerCase().replaceAll('-', '_');
+    if (!REPRESENTATIONS.has(normalized)) {
+      throw new Error(`${path} "${normalized}" is not supported.`);
+    }
+    return normalized;
+  }
+
+  function numberInRange(value, fallback, path, min = 0, max = 1) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const parsed = typeof value === 'number' ? value : Number(String(value).trim());
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+      throw new Error(`${path} must be a number from ${min} to ${max}.`);
+    }
+    return parsed;
   }
 
   function normalizeNumbering(value, fallback = 'auth') {
@@ -215,10 +260,16 @@
     if (!Array.isArray(regionsRaw)) throw new Error('The YAML file must contain a regions: list.');
     if (regionsRaw.length > MAX_REGIONS) throw new Error(`The YAML file contains more than ${MAX_REGIONS} regions.`);
 
-    const representationRaw = cleanString(viewerRaw.representation || raw.representation || 'cartoon').toLowerCase().replaceAll('-', '_');
-    if (!REPRESENTATIONS.has(representationRaw)) {
-      throw new Error(`viewer.representation "${representationRaw}" is not supported.`);
-    }
+    const representationRaw = normalizeRepresentation(
+      viewerRaw.representation ?? raw.representation ?? 'cartoon',
+      'cartoon',
+      'viewer.representation'
+    );
+    const componentRepresentationRaw = normalizeRepresentation(
+      viewerRaw.component_representation ?? viewerRaw.componentRepresentation,
+      representationRaw,
+      'viewer.component_representation'
+    );
     const baseSelector = cleanString(viewerRaw.selector || raw.selector || 'protein').toLowerCase();
     if (!BASE_SELECTORS.has(baseSelector)) throw new Error(`viewer.selector "${baseSelector}" is not supported.`);
 
@@ -233,7 +284,16 @@
         baseColor: normalizeColor(viewerRaw.base_color ?? viewerRaw.baseColor ?? raw.base_color, DEFAULT_BASE_COLOR, 'viewer.base_color'),
         background: normalizeColor(viewerRaw.background ?? raw.background, DEFAULT_BACKGROUND, 'viewer.background'),
         showLabels: toBoolean(viewerRaw.show_labels ?? viewerRaw.showLabels ?? raw.show_labels, false),
-        showTooltips: toBoolean(viewerRaw.show_tooltips ?? viewerRaw.showTooltips ?? raw.show_tooltips, true)
+        showTooltips: toBoolean(viewerRaw.show_tooltips ?? viewerRaw.showTooltips ?? raw.show_tooltips, true),
+        createComponents: toBoolean(viewerRaw.create_components ?? viewerRaw.createComponents, true),
+        componentRepresentation: componentRepresentationRaw,
+        componentsVisible: toBoolean(viewerRaw.components_visible ?? viewerRaw.componentsVisible, false),
+        componentOpacity: numberInRange(
+          viewerRaw.component_opacity ?? viewerRaw.componentOpacity,
+          1,
+          'viewer.component_opacity'
+        ),
+        baseComponentName: cleanString(viewerRaw.base_component_name ?? viewerRaw.baseComponentName) || 'Base structure'
       },
       regions: []
     };
@@ -260,6 +320,21 @@
       const chains = normalizeChains(chainValue, defaultChains);
       const color = normalizeColor(entry.color ?? entry.colour, '', `${path}.color`);
       const description = cleanString(entry.description || entry.note || '');
+      const createComponent = toBoolean(
+        entry.create_component ?? entry.createComponent ?? entry.component,
+        annotation.viewer.createComponents
+      );
+      const componentName = cleanString(entry.component_name ?? entry.componentName) || name;
+      const componentRepresentation = normalizeRepresentation(
+        entry.component_representation ?? entry.componentRepresentation ?? entry.representation,
+        annotation.viewer.componentRepresentation,
+        `${path}.component_representation`
+      );
+      const componentOpacity = numberInRange(
+        entry.component_opacity ?? entry.componentOpacity,
+        annotation.viewer.componentOpacity,
+        `${path}.component_opacity`
+      );
 
       annotation.regions.push({
         index,
@@ -272,12 +347,28 @@
         chains,
         label: toBoolean(entry.label_3d ?? entry.show_label ?? entry.label, annotation.viewer.showLabels),
         tooltip: toBoolean(entry.tooltip, annotation.viewer.showTooltips),
-        description
+        description,
+        createComponent,
+        componentName,
+        componentRepresentation,
+        componentOpacity,
+        componentVisible: toBoolean(
+          entry.component_visible ?? entry.componentVisible,
+          annotation.viewer.componentsVisible
+        )
       });
     });
 
     const enabledCount = annotation.regions.filter(region => region.enabled).length;
     if (enabledCount === 0) throw new Error('The YAML file does not contain any enabled regions.');
+
+    const componentNodeCount = annotation.regions.filter(createsMvsComponent).length;
+    if (componentNodeCount > MAX_COMPONENTS) {
+      throw new Error(
+        `The YAML file would create ${componentNodeCount} Mol* components. ` +
+        `The safety limit is ${MAX_COMPONENTS}; disable create_component, tooltip, or label on some entries.`
+      );
+    }
     return annotation;
   }
 
@@ -370,6 +461,10 @@
     return region.description ? `${base} · ${region.description}` : base;
   }
 
+  function createsMvsComponent(region) {
+    return region.enabled && (region.createComponent || region.tooltip || region.label);
+  }
+
   function buildMvsData(pdbObjectUrl, annotation) {
     const extension = window.molstar?.PluginExtensions?.mvs;
     if (!extension?.MVSData?.createBuilder || typeof extension.loadMVS !== 'function') {
@@ -383,15 +478,59 @@
       .parse({ format: 'pdb' })
       .modelStructure({});
 
-    const component = structure.component({ selector: annotation.viewer.selector });
+    const component = structure.component({
+      selector: annotation.viewer.selector,
+      ref: 'yaml-base-structure',
+      custom: {
+        [REGION_COMPONENT_CUSTOM_KEY]: {
+          label: annotation.viewer.baseComponentName,
+          role: 'base'
+        }
+      }
+    });
     const representation = component.representation({ type: annotation.viewer.representation });
     representation.color({ color: annotation.viewer.baseColor });
 
     for (const region of annotation.regions) {
       if (!region.enabled) continue;
       const selector = makeSelector(region);
+
+      // Preserve the compact, single-representation coloring behavior.
+      // The independent component representation is created in addition to
+      // this color layer and is hidden by default unless YAML requests it.
       representation.color({ color: region.color, selector });
-      const regionComponent = structure.component({ selector });
+
+      if (!createsMvsComponent(region)) continue;
+      const componentRef = `yaml-region-${region.index + 1}`;
+      const regionComponent = structure.component({
+        selector,
+        ref: componentRef,
+        custom: {
+          [REGION_COMPONENT_CUSTOM_KEY]: {
+            label: region.componentName,
+            role: 'region',
+            regionIndex: region.index
+          }
+        }
+      });
+
+      if (region.createComponent) {
+        const regionRepresentation = regionComponent.representation({
+          type: region.componentRepresentation,
+          ref: `${componentRef}-representation`,
+          custom: {
+            [REGION_COMPONENT_CUSTOM_KEY]: {
+              hidden: !region.componentVisible,
+              role: 'region-representation',
+              regionIndex: region.index
+            }
+          }
+        });
+        regionRepresentation.color({ color: region.color });
+        if (region.componentOpacity < 1) {
+          regionRepresentation.opacity({ opacity: region.componentOpacity });
+        }
+      }
       if (region.tooltip) regionComponent.tooltip({ text: regionTooltip(region) });
       if (region.label) regionComponent.label({ text: region.name });
     }
@@ -459,7 +598,8 @@
         await window.molstar.PluginExtensions.mvs.loadMVS(state.viewer.plugin, mvsData, {
           sourceUrl: undefined,
           sanityChecks: true,
-          replaceExisting: true
+          replaceExisting: true,
+          extensions: [REGION_COMPONENT_MVS_EXTENSION]
         });
       } finally {
         setTimeout(() => URL.revokeObjectURL(pdbObjectUrl), 1000);
@@ -481,9 +621,16 @@
       renderCurrentState();
       applyLayout(elements.layoutSelect.value, false);
       hideOverlay();
+      const enabledCount = annotation.regions.filter(region => region.enabled).length;
+      const componentCount = annotation.regions.filter(
+        region => region.enabled && region.createComponent && region.coverage.matched > 0
+      ).length;
       const warnings = annotation.regions.filter(region => region.enabled && region.coverage.matched === 0).length;
       setViewerStatus(warnings ? 'warning' : 'ready', warnings ? `${warnings} range warning${warnings === 1 ? '' : 's'}` : 'Loaded');
-      showToast(`Loaded ${annotation.regions.filter(region => region.enabled).length} colored region${annotation.regions.filter(region => region.enabled).length === 1 ? '' : 's'}.`);
+      showToast(
+        `Loaded ${enabledCount} colored region${enabledCount === 1 ? '' : 's'}` +
+        (componentCount ? ` and created ${componentCount} Mol* component${componentCount === 1 ? '' : 's'}.` : '.')
+      );
       return true;
     } catch (error) {
       if (generation !== state.loadGeneration) return false;
@@ -552,6 +699,16 @@
     appendSummaryRow(grid, 'Numbering', annotation.numbering === 'auth' ? 'Author/PDB residue IDs' : 'Sequential label IDs');
     appendSummaryRow(grid, 'Chains in PDB', chainLabels);
     appendSummaryRow(grid, 'Base view', `${annotation.viewer.representation.replaceAll('_', ' ')} · ${annotation.viewer.baseColor}`);
+    const configuredComponents = enabledRegions.filter(region => region.createComponent);
+    const matchingComponents = configuredComponents.filter(region => region.coverage.matched > 0);
+    const visibleComponents = matchingComponents.filter(region => region.componentVisible).length;
+    appendSummaryRow(
+      grid,
+      'Mol* components',
+      configuredComponents.length
+        ? `${matchingComponents.length} matching of ${configuredComponents.length} configured · ${visibleComponents} visible initially`
+        : 'Disabled'
+    );
     appendSummaryRow(grid, 'Validation', warningCount ? `${warningCount} range warning${warningCount === 1 ? '' : 's'}` : 'All enabled ranges matched residues');
     elements.annotationSummary.appendChild(grid);
 
@@ -590,6 +747,11 @@
           ? ` Missing chain(s): ${region.coverage.missingChains.join(', ')}.`
           : '';
         item.title = `This range did not match any parsed PDB residues.${missing}`;
+      } else if (region.createComponent) {
+        badge.className = 'legend-label-badge';
+        badge.textContent = 'COMPONENT';
+        badge.title = `${region.componentName} · ${region.componentRepresentation.replaceAll('_', ' ')} · ` +
+          `${Math.round(region.componentOpacity * 100)}% opacity · ${region.componentVisible ? 'visible' : 'hidden'} at load`;
       } else if (region.label) {
         badge.className = 'legend-label-badge';
         badge.textContent = '3D LABEL';
@@ -755,7 +917,7 @@
   }
 
   function downloadTemplate() {
-    const template = `version: 1\ntitle: My protein regions\nnumbering: auth\ndefault_chain: A\n\nviewer:\n  representation: cartoon\n  base_color: "#CBD5E1"\n  background: "#FFFFFF"\n  show_labels: false\n\nregions:\n  - name: Region 1\n    start: 1\n    end: 25\n    color: "#2563EB"\n\n  - name: Region 2\n    start: 26\n    end: 50\n    color: "#F97316"\n`;
+    const template = `version: 1\ntitle: My protein regions\nnumbering: auth\ndefault_chain: A\n\nviewer:\n  representation: cartoon\n  base_color: \"#CBD5E1\"\n  background: \"#FFFFFF\"\n  show_labels: false\n  show_tooltips: true\n\n  # Keep the colored base structure and also create one named Mol* component\n  # for each region. Independent component representations are hidden initially\n  # to avoid drawing the same residues twice. Open a layout with Controls and\n  # use the component eye icons to show, hide, isolate, or restyle each region.\n  create_components: true\n  component_representation: cartoon\n  components_visible: false\n  component_opacity: 1.0\n  base_component_name: Base structure\n\nregions:\n  - name: Region 1\n    start: 1\n    end: 25\n    color: \"#2563EB\"\n\n  - name: Region 2\n    start: 26\n    end: 50\n    color: \"#F97316\"\n    component_name: Region 2 surface\n    component_representation: surface\n    component_opacity: 0.65\n    component_visible: false\n`;
     downloadText(template, 'protein-regions-template.yaml', 'application/yaml;charset=utf-8');
   }
 
@@ -850,7 +1012,7 @@
 
   async function initializeViewer() {
     elements.brandTitle.textContent = config.title;
-    elements.brandSubtitle.textContent = 'PDB + YAML annotations';
+    elements.brandSubtitle.textContent = 'PDB + YAML region components';
     elements.pageTitle.textContent = config.title;
     elements.pageSubtitle.textContent = config.subtitle;
     document.title = config.title;
@@ -923,7 +1085,12 @@
           color: region.color,
           numbering: region.numbering,
           chains: [...region.chains],
-          matchedResidues: region.coverage.matched
+          matchedResidues: region.coverage.matched,
+          createComponent: region.createComponent,
+          componentName: region.componentName,
+          componentRepresentation: region.componentRepresentation,
+          componentOpacity: region.componentOpacity,
+          componentVisible: region.componentVisible
         }))
       } : null
     })

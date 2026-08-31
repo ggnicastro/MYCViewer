@@ -445,7 +445,7 @@ body.has-fallback-fullscreen { overflow: hidden; }
   .workspace { grid-template-columns: 1fr; }
   .annotation-card { display: grid; grid-template-columns: 260px minmax(0,1fr); }
   .annotation-header, .annotation-summary, .annotation-note { grid-column: 1; }
-  .legend-list { grid-column: 2; grid-row: 1 / span 3; max-height: 430px; border-left: 1px solid var(--line); }
+  .legend-list { grid-column: 2; grid-row: 1 / span 4; max-height: 430px; border-left: 1px solid var(--line); }
   .drop-hint { width: 100%; margin-left: 0; }
 }
 @media (max-width: 720px) {

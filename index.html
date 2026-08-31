@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Load a PDB structure and color any number of residue ranges from a YAML annotation file in Mol* Viewer.">
+  <meta name="description" content="Load a PDB structure, color residue ranges, and create named Mol* components from a YAML annotation file.">
   <meta name="theme-color" content="#111827">
   <title>Protein Region Viewer</title>
 
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/molstar@5.11.0/build/viewer/molstar.css">
-  <link rel="stylesheet" href="./styles.css?v=1">
+  <link rel="stylesheet" href="./styles.css?v=2">
 </head>
 <body>
   <header class="app-header">
@@ -17,7 +17,7 @@
       <span class="brand-mark" aria-hidden="true">M*</span>
       <span class="brand-copy">
         <strong id="brandTitle">Protein Region Viewer</strong>
-        <small id="brandSubtitle">PDB + YAML annotations</small>
+        <small id="brandSubtitle">PDB + YAML region components</small>
       </span>
     </a>
 
@@ -36,8 +36,8 @@
     <section class="control-card" aria-label="Structure and annotation controls">
       <div class="control-intro">
         <p class="eyebrow">Residue-range annotation</p>
-        <h1 id="pageTitle">Color a protein directly from YAML</h1>
-        <p id="pageSubtitle">Choose one PDB file and one YAML file, or load the pair configured in the repository.</p>
+        <h1 id="pageTitle">Color and organize protein regions from YAML</h1>
+        <p id="pageSubtitle">Create a colored base view plus one named Mol* component for every YAML region.</p>
       </div>
 
       <div class="control-grid">
@@ -154,6 +154,11 @@
         </div>
 
         <div class="annotation-note">
+          <strong>Mol* components</strong>
+          <span>Choose a layout with <strong>Controls</strong> to manage the named YAML components. They are hidden initially by default; use the eye controls, and hide <code>Base structure</code> to isolate one region.</span>
+        </div>
+
+        <div class="annotation-note">
           <strong>Range behavior</strong>
           <span><code>start</code> and <code>end</code> are inclusive. When regions overlap, entries later in the YAML file take color priority.</span>
         </div>
@@ -164,7 +169,7 @@
   <footer class="page-footer">
     <span>Mol* Viewer 5.11.0</span>
     <span aria-hidden="true">•</span>
-    <span>MolViewSpec residue selectors</span>
+    <span>MolViewSpec selectors + components</span>
     <span aria-hidden="true">•</span>
     <span>PDB + YAML, static GitHub Pages</span>
   </footer>
@@ -175,9 +180,9 @@
 
   <noscript><div class="noscript-message">Enable JavaScript to use the molecular viewer.</div></noscript>
 
-  <script src="./config.js?v=1"></script>
+  <script src="./config.js?v=2"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/molstar@5.11.0/build/viewer/molstar.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js"></script>
-  <script defer src="./app.js?v=1"></script>
+  <script defer src="./app.js?v=2"></script>
 </body>
 </html>
