@@ -47,7 +47,6 @@ regions:
     component_opacity: 1
     components_visible: True
 
-
   - name: Catalytic site
     start: 43
     end: 48
