@@ -50,13 +50,13 @@ regions:
 
 
   - name: Active site
-  positions: [40, 43, 67]
-  color: "#FACC15"
-  create_component: true
-  component_name: Active-site atoms
-  component_representation: ball_and_stick
-  component_color_theme: element-symbol
-  component_opacity: 1.0
-  component_visible: true
+    positions: [40, 43, 67]
+    color: "#FACC15"
+    create_component: true
+    component_name: Active-site atoms
+    component_representation: ball_and_stick
+    component_color_theme: element-symbol
+    component_opacity: 1.0
+    component_visible: true
 
   
