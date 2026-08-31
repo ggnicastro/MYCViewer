@@ -14,5 +14,5 @@ window.PROTEIN_REGION_VIEWER_CONFIG = {
   yamlUrl: './annotations/demo-regions.yaml',
 
   // canvas | sequence | controls | sequence-controls | full
-  defaultLayout: 'sequence-controls'
+  defaultLayout: 'canvas'
 };
