@@ -19,7 +19,7 @@ viewer:
   create_components: true
   component_representation: cartoon
   component_opacity: 0.2
-  components_visible: false
+  components_visible: True
   base_component_name: Base structure
 
 regions:
