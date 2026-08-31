@@ -10,6 +10,7 @@ viewer:
   selector: protein
   base_color: "#FFFFFF"
   background: "#FFFFFF"
+  opacity: 0.2
   show_labels: false
   show_tooltips: true
 
@@ -51,7 +52,7 @@ regions:
     start: 43
     end: 48
     color: "#F97316"
-    component_name: Flexible linker 2 atoms
+    component_name: VVV
     component_representation: ball_and_stick
     component_opacity: 0.9
     components_visible: True
