@@ -23,19 +23,19 @@ viewer:
 
 regions:
   - name: N-terminal segment
-    start: 1
-    end: 10
-    color: "#2563EB"
+    start: 249
+    end: 504
+    color: "#acd7a2"
 
-  - name: Helix 1 extension
-    start: 11
-    end: 18
-    color: "#06B6D4"
+  - name: Reverse transcriptase
+    start: 505
+    end: 775
+    color: "#ad9bc5"
 
-  - name: Flexible linker 1
-    start: 19
-    end: 24
-    color: "#F59E0B"
+  - name: Thumb
+    start: 776
+    end: 850
+    color: " #b6e2e7"
     component_name: Flexible linker 1 atoms
     component_representation: ball_and_stick
     component_opacity: 0.9
