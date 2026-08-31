@@ -19,7 +19,7 @@ viewer:
   # They start hidden so the compact colored base view is not duplicated.
   create_components: true
   component_representation: cartoon
-  component_opacity: 0.2
+  component_opacity: 1
   components_visible: True
   base_component_name: Base structure
 
