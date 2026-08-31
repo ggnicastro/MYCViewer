@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '2.0.0';
+  const APP_VERSION = '2.1.0';
   const MAX_PDB_BYTES = 50 * 1024 * 1024;
   const MAX_YAML_BYTES = 2 * 1024 * 1024;
   const MAX_REGIONS = 1000;
@@ -13,6 +13,9 @@
   const DEFAULT_COMPONENT_COLOR = '#CBD5E1';
   const DEFAULT_BACKGROUND = '#FFFFFF';
   const DEFAULT_VIEWER_STYLE = 'default';
+  const BASE_COMPONENT_NAME = 'Base structure';
+  const BASE_COMPONENT_COLOR = '#FFFFFF';
+  const BASE_COMPONENT_OPACITY = 0.2;
 
   const LAYOUTS = Object.freeze({
     canvas: Object.freeze({
@@ -44,6 +47,9 @@
 
   const REPRESENTATIONS = new Set([
     'cartoon', 'backbone', 'ball_and_stick', 'line', 'spacefill', 'carbohydrate', 'surface', 'putty'
+  ]);
+  const HYDROGEN_AWARE_REPRESENTATIONS = new Set([
+    'ball_and_stick', 'line', 'spacefill', 'surface'
   ]);
   const VIEWER_STYLES = new Set(['default', 'illustrative']);
 
@@ -803,6 +809,13 @@
     return selectors.length === 1 ? selectors[0] : selectors;
   }
 
+  function makeBaseSelector(annotation) {
+    if (!annotation.defaultChains.length) return 'protein';
+    const chainKey = annotation.numbering === 'auth' ? 'auth_asym_id' : 'label_asym_id';
+    const selectors = annotation.defaultChains.map(chain => ({ [chainKey]: chain }));
+    return selectors.length === 1 ? selectors[0] : selectors;
+  }
+
   function formatPositionList(positions, limit = 12) {
     if (positions.length <= limit) return positions.join(', ');
     const visible = positions.slice(0, limit).join(', ');
@@ -888,7 +901,34 @@
       .parse({ format: 'pdb' })
       .modelStructure({});
 
-    let representationCount = 0;
+    const baseComponent = structure.component({
+      selector: makeBaseSelector(annotation),
+      ref: 'yaml-base-structure',
+      custom: {
+        [REGION_COMPONENT_CUSTOM_KEY]: {
+          label: BASE_COMPONENT_NAME,
+          role: 'base'
+        }
+      }
+    });
+    const baseRepresentation = baseComponent.representation({
+      type: 'cartoon',
+      ref: 'yaml-base-structure-representation',
+      custom: {
+        [REGION_COMPONENT_CUSTOM_KEY]: {
+          hidden: false,
+          role: 'base-representation'
+        },
+        molstar_representation_params: {
+          ignoreHydrogens: true,
+          ignoreHydrogensVariant: 'all'
+        }
+      }
+    });
+    baseRepresentation.color({ color: BASE_COMPONENT_COLOR });
+    baseRepresentation.opacity({ opacity: BASE_COMPONENT_OPACITY });
+
+    let regionRepresentationCount = 0;
 
     for (const region of annotation.regions) {
       if (!region.enabled || region.coverage?.matched === 0 || !createsMvsComponent(region)) continue;
@@ -918,21 +958,31 @@
             }
           }
         };
-        if (region.componentRepresentationParams) {
-          representationParams.custom.molstar_representation_params = region.componentRepresentationParams;
+        if (HYDROGEN_AWARE_REPRESENTATIONS.has(region.componentRepresentation)) {
+          representationParams.ignore_hydrogens = true;
+        }
+        const nativeRepresentationParams = deepMergeObjects(
+          region.componentRepresentationParams,
+          {
+            ignoreHydrogens: true,
+            ignoreHydrogensVariant: 'all'
+          }
+        );
+        if (nativeRepresentationParams) {
+          representationParams.custom.molstar_representation_params = nativeRepresentationParams;
         }
         const regionRepresentation = regionComponent.representation(representationParams);
         applyComponentColor(regionRepresentation, region);
         if (region.componentOpacity < 1) {
           regionRepresentation.opacity({ opacity: region.componentOpacity });
         }
-        representationCount += 1;
+        regionRepresentationCount += 1;
       }
       if (region.tooltip) regionComponent.tooltip({ text: regionTooltip(region) });
       if (region.label) regionComponent.label({ text: region.name });
     }
 
-    if (representationCount === 0) {
+    if (regionRepresentationCount === 0) {
       throw new Error(
         'No Mol* component representation could be created. Ensure that at least one enabled region matches the PDB and has create_component: true.'
       );
@@ -946,6 +996,17 @@
       throw new Error(`The generated MolViewSpec scene is invalid: ${String(issues)}`);
     }
     return mvsData;
+  }
+
+  async function enforceHydrogensHidden() {
+    const manager = state.viewer?.plugin?.managers?.structure?.component;
+    const options = manager?.state?.options;
+    if (!manager?.setOptions || !options || options.hydrogens === 'hide-all') return;
+    try {
+      await manager.setOptions({ ...options, hydrogens: 'hide-all' });
+    } catch (error) {
+      console.warn('Could not set the Mol* hydrogen display option to Hide All:', error);
+    }
   }
 
   async function readSource(source, maxBytes, label) {
@@ -1428,6 +1489,7 @@ regions:
         powerPreference: 'high-performance',
         illumination: false
       });
+      await enforceHydrogensHidden();
       applyLayout(config.defaultLayout, false);
       setViewerStatus('idle', 'Ready');
       showOverlay('empty', 'Load a PDB + YAML pair', 'Use the configured repository files, select two local files, or drag the pair onto this component-only viewer.');

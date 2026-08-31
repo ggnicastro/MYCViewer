@@ -4,16 +4,17 @@ A static GitHub Pages application that loads one PDB structure and one YAML file
 
 ## Rendering model
 
-This version uses a **component-only scene**:
+This version uses one lightweight context component plus the YAML region components:
 
-- every enabled YAML region can create one named Mol* component;
-- every component can have its own representation, color theme, opacity, and initial visibility;
-- there is no automatically rendered full-protein `Base structure`;
-- there is no separate base-color layer beneath the components;
-- the custom YAML annotation sidebar has been removed;
+- `Base structure` is created automatically as a white cartoon with opacity `0.2`;
+- it selects the complete chain or chains from `default_chain`; when no default chain is set, it selects all protein chains;
+- every enabled YAML region can create one named Mol* component above that context cartoon;
+- every region component can have its own representation, color theme, opacity, and initial visibility;
+- hydrogen display is forced to **Hide All** for the loaded scene and newly added representations;
+- the custom YAML annotation sidebar remains removed;
 - component management is done with the native Mol* controls.
 
-The visual defaults are defined once under `viewer`. Each region inherits those values and may override only the properties that need to differ.
+The visual defaults under `viewer` still apply only to the YAML region components. Each region inherits those values and may override only the properties that need to differ.
 
 ## Features
 
@@ -23,7 +24,9 @@ The visual defaults are defined once under `viewer`. Each region inherits those 
 - single-residue selections with `residue: 42`
 - author (`auth`) or sequential (`label`) residue numbering
 - one chain, multiple chains, or all chains
-- named Mol* components
+- an automatic translucent white `Base structure` cartoon
+- named Mol* region components
+- hydrogen display disabled by default
 - global visual defaults with per-region overrides
 - native Mol* representations and color themes
 - Mol* Illustrative-style defaults
@@ -172,36 +175,31 @@ An explicit `component_color_theme` takes priority over `color`. For example, th
   component_color_theme: element-symbol
 ```
 
-## Component-only behavior
+## Base context and region components
 
-The application does **not** create this hierarchy:
+The native Mol* component hierarchy starts with the automatic context component and then lists the YAML regions:
 
 ```text
 Base structure
 Region 1
 Region 2
-```
-
-Instead, it creates only the YAML region components:
-
-```text
-Region 1
-Region 2
 Region 3
 ```
 
-Consequences:
+`Base structure` is always:
 
-- unselected residues are not automatically represented;
-- there is no duplicate full-protein geometry below the components;
-- opacity is controlled with `component_opacity`, globally or per region;
-- each region remains independently editable in the Mol* controls.
+```text
+selection: complete default chain(s), or all protein chains when default_chain is omitted
+representation: cartoon
+color: white
+opacity: 0.2
+```
 
-To display the entire protein, define non-overlapping regions that collectively cover it. To display only selected domains or motifs, include only those selections.
+The base component is created first. YAML region components are then created as independent representations using their inherited or per-region settings. The base component does not consume or replace any of the existing `viewer.component_*` options.
 
 ### Overlapping selections
 
-Independent Mol* components are independent representations. If two region selections overlap, both representations are drawn for the shared residues. Avoid overlapping selections when the goal is a strictly non-layered scene.
+Independent Mol* components remain independent representations. If two YAML region selections overlap, both region representations are drawn for the shared residues. The translucent base cartoon is only a structural context layer.
 
 ## Mol* Illustrative style
 
@@ -244,7 +242,7 @@ A region can still override the Illustrative defaults:
   component_opacity: 1.0
 ```
 
-`style: illustrative` controls the global defaults and post-processing. It does not create a base representation.
+`style: illustrative` controls the YAML region defaults and post-processing. The automatic `Base structure` remains a white cartoon at opacity `0.2`.
 
 ## Representations
 
@@ -356,7 +354,13 @@ Values range from `0` to `1`:
 1.00 = fully opaque
 ```
 
-There is no `base_opacity` in the component-only model. Use `component_opacity`.
+The automatic `Base structure` opacity is fixed at `0.2`. `component_opacity` continues to control only the YAML region components.
+
+## Hydrogen display
+
+Hydrogens are hidden automatically. The application sets the Mol* component-manager option to `Hide All` and also marks atomistic YAML representations to ignore hydrogens. No YAML property is required.
+
+This applies to region representations such as `ball_and_stick`, `line`, `spacefill`, and `surface`, including representations added later through the native Mol* controls.
 
 ## Initial visibility
 
@@ -583,44 +587,26 @@ https://USERNAME.github.io/REPOSITORY/
 
 ## Updating an existing installation
 
-For the component-only update, replace:
+For the base-context update, replace:
 
 ```text
 app.js
 index.html
-styles.css
 README.md
 UPDATE.md
-annotations/template.yaml
-annotations/README.md
 ```
 
-Keep your own:
+No CSS, `config.js`, PDB, or YAML change is required. Keep your own:
 
 ```text
+styles.css
 config.js
 pdb/
 annotations/your-file.yaml
 .github/
 ```
 
-Update your YAML by removing base-only properties such as:
-
-```yaml
-base_opacity:
-base_color:
-base_color_theme:
-base_component_name:
-```
-
-Use the corresponding component defaults instead:
-
-```yaml
-component_opacity:
-component_color:
-component_color_theme:
-components_visible: true
-```
+The white `Base structure` cartoon and the `Hide All` hydrogen option are applied automatically. Existing `viewer.component_*` and region-level settings continue to control the YAML region components exactly as before.
 
 ## Safari cache
 
