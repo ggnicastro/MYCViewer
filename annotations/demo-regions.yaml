@@ -28,7 +28,7 @@ regions:
   - name: Helix 1
     start: 2
     end: 15
-    color: "#2563EB"
+    color: "#418ABF"
     components_visible: True
     component_representation: cartoon
 
@@ -36,7 +36,7 @@ regions:
   - name: Helix 2
     start: 72
     end: 83
-    color: "#06B6D4"
+    color: "#78BC1D"
     component_representation: cartoon
     components_visible: True
 
@@ -44,7 +44,7 @@ regions:
   - name: Helix 3
     start: 90
     end: 112
-    color: "#F59E0B"
+    color: "#D6CE3E"
     component_name: Helix 3
     component_representation: Cartoon
     component_opacity: 1
@@ -53,7 +53,7 @@ regions:
   - name: Helix 4
     start: 147
     end: 166
-    color: "#F59E0B"
+    color: "#D97825"
     component_name: Helix 4
     component_representation: Cartoon
     component_opacity: 1
