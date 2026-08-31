@@ -14,6 +14,7 @@ viewer:
   base_opacity: 0.20
   show_labels: false
   show_tooltips: true
+  component_visuals: false
 
   # Every enabled YAML region becomes a separately named Mol* component.
   # They start hidden so the compact colored base view is not duplicated.
@@ -26,32 +27,41 @@ viewer:
 regions:
   - name: Helix 1
     start: 2
-    end: 12
+    end: 15
     color: "#2563EB"
     components_visible: True
     component_representation: cartoon
 
 
   - name: Helix 2
-    start: 11
-    end: 18
+    start: 72
+    end: 83
     color: "#06B6D4"
     component_representation: cartoon
     components_visible: True
 
 
   - name: Helix 3
-    start: 19
-    end: 24
+    start: 90
+    end: 112
     color: "#F59E0B"
     component_name: Helix 3
     component_representation: Cartoon
     component_opacity: 1
     components_visible: True
 
+  - name: Helix 4
+    start: 147
+    end: 166
+    color: "#F59E0B"
+    component_name: Helix 4
+    component_representation: Cartoon
+    component_opacity: 1
+    components_visible: True
+
 
   - name: Active site
-    positions: [40, 43, 67]
+    positions: [74, 98, 150]
     color: "#FACC15"
     create_component: true
     component_name: Active-site atoms
