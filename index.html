@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Load a PDB structure, style the base structure, color residue ranges or exact positions, and create named Mol* components from YAML.">
+  <meta name="description" content="Load a PDB structure, apply one base Mol* style, and let YAML residue regions override the final color without duplicate visual layers.">
   <meta name="theme-color" content="#111827">
   <title>Protein Region Viewer</title>
 
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/molstar@5.11.0/build/viewer/molstar.css">
-  <link rel="stylesheet" href="./styles.css?v=5">
+  <link rel="stylesheet" href="./styles.css?v=6">
 </head>
 <body>
   <header class="app-header">
@@ -17,7 +17,7 @@
       <span class="brand-mark" aria-hidden="true">M*</span>
       <span class="brand-copy">
         <strong id="brandTitle">Protein Region Viewer</strong>
-        <small id="brandSubtitle">PDB + YAML region components</small>
+        <small id="brandSubtitle">PDB + YAML single-view overrides</small>
       </span>
     </a>
 
@@ -36,8 +36,8 @@
     <section class="control-card" aria-label="Structure and annotation controls">
       <div class="control-intro">
         <p class="eyebrow">Residue annotation</p>
-        <h1 id="pageTitle">Color and organize protein regions from YAML</h1>
-        <p id="pageSubtitle">Create an opacity-controlled base view, optionally use Mol* Illustrative style, and add one named component for every YAML region.</p>
+        <h1 id="pageTitle">Apply one base style and override regions from YAML</h1>
+        <p id="pageSubtitle">Use one visible Mol* representation, keep named region selectors, and resolve region colors in YAML order.</p>
       </div>
 
       <div class="control-grid">
@@ -190,9 +190,9 @@
 
   <noscript><div class="noscript-message">Enable JavaScript to use the molecular viewer.</div></noscript>
 
-  <script src="./config.js?v=5"></script>
+  <script src="./config.js?v=6"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/molstar@5.11.0/build/viewer/molstar.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/js-yaml@5.4.1/dist/browser/js-yaml.umd.min.js"></script>
-  <script defer src="./app.js?v=5"></script>
+  <script defer src="./app.js?v=6"></script>
 </body>
 </html>

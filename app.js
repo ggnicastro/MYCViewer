@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.6.0';
   const MAX_PDB_BYTES = 50 * 1024 * 1024;
   const MAX_YAML_BYTES = 2 * 1024 * 1024;
   const MAX_REGIONS = 1000;
@@ -202,7 +202,7 @@
 
   function normalizeConfig(raw) {
     const title = cleanString(raw.title) || 'Protein Region Viewer';
-    const subtitle = cleanString(raw.subtitle) || 'Color PDB residue ranges or exact residue sets and style named Mol* components from YAML';
+    const subtitle = cleanString(raw.subtitle) || 'Apply one base Mol* style and let YAML regions override it without duplicate visual layers';
     return {
       title,
       subtitle,
@@ -543,7 +543,19 @@
         background: normalizeColor(viewerRaw.background ?? raw.background, DEFAULT_BACKGROUND, 'viewer.background'),
         showLabels: toBoolean(viewerRaw.show_labels ?? viewerRaw.showLabels ?? raw.show_labels, false),
         showTooltips: toBoolean(viewerRaw.show_tooltips ?? viewerRaw.showTooltips ?? raw.show_tooltips, true),
+        // Named Mol* selector components are useful for focus, tooltips, and
+        // manual editing in the controls. They do not create extra geometry.
         createComponents: toBoolean(viewerRaw.create_components ?? viewerRaw.createComponents, true),
+
+        // Independent region representations are opt-in. Keeping this false
+        // gives one visible base representation whose regional colors are
+        // resolved by YAML order, without duplicated/stacked geometry.
+        componentVisuals: toBoolean(
+          viewerRaw.component_visuals ?? viewerRaw.componentVisuals ??
+            viewerRaw.create_component_visuals ?? viewerRaw.createComponentVisuals ??
+            viewerRaw.render_component_visuals ?? viewerRaw.renderComponentVisuals,
+          false
+        ),
         componentRepresentation: componentRepresentationRaw,
         componentColorTheme: componentColorThemeRaw,
         componentColorThemeParams: componentColorThemeParamsRaw,
@@ -608,7 +620,14 @@
       const chains = normalizeChains(chainValue, defaultChains);
       const color = normalizeColor(entry.color ?? entry.colour, '', `${path}.color`);
       const description = cleanString(entry.description || entry.note || '');
-      const createComponent = toBoolean(
+      const componentVisual = toBoolean(
+        entry.component_visual ?? entry.componentVisual ??
+          entry.create_component_visual ?? entry.createComponentVisual ??
+          entry.render_component ?? entry.renderComponent ??
+          entry.create_representation ?? entry.createRepresentation,
+        annotation.viewer.componentVisuals
+      );
+      const createComponent = componentVisual || toBoolean(
         entry.create_component ?? entry.createComponent ?? entry.component,
         annotation.viewer.createComponents
       );
@@ -660,6 +679,7 @@
         tooltip: toBoolean(entry.tooltip, annotation.viewer.showTooltips),
         description,
         createComponent,
+        componentVisual,
         componentName,
         componentRepresentation,
         componentColorTheme,
@@ -855,7 +875,7 @@
   }
 
   function createsMvsComponent(region) {
-    return region.enabled && (region.createComponent || region.tooltip || region.label);
+    return region.enabled && (region.createComponent || region.componentVisual || region.tooltip || region.label);
   }
 
   function applyRepresentationColor(representation, theme, uniformColor, themeParams) {
@@ -940,9 +960,9 @@
       if (!region.enabled) continue;
       const selector = makeSelector(region);
 
-      // Preserve the compact, single-representation coloring behavior.
-      // The independent component representation is created in addition to
-      // this color layer and is hidden by default unless YAML requests it.
+      // One visible base representation: each YAML entry replaces the final
+      // color for its selector. Later entries win in overlaps. No independent
+      // region geometry is created unless component_visual is explicitly true.
       representation.color({ color: region.color, selector });
 
       if (!createsMvsComponent(region)) continue;
@@ -959,7 +979,7 @@
         }
       });
 
-      if (region.createComponent) {
+      if (region.componentVisual) {
         const regionRepresentation = regionComponent.representation({
           type: region.componentRepresentation,
           ref: `${componentRef}-representation`,
@@ -1070,11 +1090,15 @@
       const componentCount = annotation.regions.filter(
         region => region.enabled && region.createComponent && region.coverage.matched > 0
       ).length;
+      const visualCount = annotation.regions.filter(
+        region => region.enabled && region.componentVisual && region.coverage.matched > 0
+      ).length;
       const warnings = annotation.regions.filter(region => region.enabled && regionCoverageWarning(region)).length;
       setViewerStatus(warnings ? 'warning' : 'ready', warnings ? `${warnings} selection warning${warnings === 1 ? '' : 's'}` : 'Loaded');
       showToast(
-        `Loaded ${enabledCount} colored region${enabledCount === 1 ? '' : 's'}` +
-        (componentCount ? ` and created ${componentCount} Mol* component${componentCount === 1 ? '' : 's'}.` : '.')
+        `Loaded ${enabledCount} region color override${enabledCount === 1 ? '' : 's'}` +
+        (componentCount ? ` and created ${componentCount} named Mol* component${componentCount === 1 ? '' : 's'}` : '') +
+        (visualCount ? `, including ${visualCount} independent visual${visualCount === 1 ? '' : 's'}.` : '.')
       );
       return true;
     } catch (error) {
@@ -1157,13 +1181,22 @@
     );
     const configuredComponents = enabledRegions.filter(region => region.createComponent);
     const matchingComponents = configuredComponents.filter(region => region.coverage.matched > 0);
-    const visibleComponents = matchingComponents.filter(region => region.componentVisible).length;
+    const configuredVisuals = enabledRegions.filter(region => region.componentVisual);
+    const matchingVisuals = configuredVisuals.filter(region => region.coverage.matched > 0);
+    const visibleVisuals = matchingVisuals.filter(region => region.componentVisible).length;
     appendSummaryRow(
       grid,
       'Mol* components',
       configuredComponents.length
-        ? `${matchingComponents.length} matching of ${configuredComponents.length} configured · ${visibleComponents} visible initially`
+        ? `${matchingComponents.length} matching of ${configuredComponents.length} named selectors`
         : 'Disabled'
+    );
+    appendSummaryRow(
+      grid,
+      'Independent visuals',
+      configuredVisuals.length
+        ? `${matchingVisuals.length} matching of ${configuredVisuals.length} configured · ${visibleVisuals} visible initially`
+        : 'Disabled — single visual override mode'
     );
     appendSummaryRow(grid, 'Validation', warningCount ? `${warningCount} selection warning${warningCount === 1 ? '' : 's'}` : 'All enabled selections matched residues');
     elements.annotationSummary.appendChild(grid);
@@ -1213,17 +1246,21 @@
           ? ` Missing chain(s): ${region.coverage.missingChains.join(', ')}.`
           : '';
         item.title = `Some exact residue positions were not found.${missing}${missingPositionText(region)}`;
-      } else if (region.createComponent) {
+      } else if (region.componentVisual) {
         badge.className = 'legend-label-badge';
-        badge.textContent = 'COMPONENT';
+        badge.textContent = 'VISUAL';
         const componentColorDescription = region.componentColorTheme === 'uniform'
           ? `uniform ${region.componentColor}`
           : region.componentColorTheme === 'default'
             ? 'Mol* default coloring'
             : `Mol* ${region.componentColorTheme} theme`;
-        badge.title = `${region.componentName} · ${region.componentRepresentation.replaceAll('_', ' ')} · ` +
+        badge.title = `${region.componentName} · independent ${region.componentRepresentation.replaceAll('_', ' ')} representation · ` +
           `${componentColorDescription} · ${Math.round(region.componentOpacity * 100)}% opacity · ` +
           `${region.componentVisible ? 'visible' : 'hidden'} at load`;
+      } else if (region.createComponent) {
+        badge.className = 'legend-label-badge';
+        badge.textContent = 'COMPONENT';
+        badge.title = `${region.componentName} · named selector only; its visible color is applied to the single base representation`;
       } else if (region.label) {
         badge.className = 'legend-label-badge';
         badge.textContent = '3D LABEL';
@@ -1395,81 +1432,53 @@ numbering: auth
 default_chain: A
 
 viewer:
-  # Built-in viewer style:
-  # default      = normal rendering
-  # illustrative = Mol* Illustrative quick style defaults: spacefill,
-  #                illustrative colors, ignore-light, outlines, and SSAO
+  # One global visual style for the complete protein.
+  # illustrative = spacefill + native illustrative theme + ignore-light +
+  #                outline + ambient occlusion, unless overridden below.
   style: illustrative
-
-  # Optional. When style is illustrative and representation is omitted, the
-  # base structure defaults to spacefill. An explicit value overrides it.
-  # representation: spacefill
   selector: protein
 
-  # Opacity of the complete named Base structure component, from 0 to 1.
-  # This does not change the opacity of independent region components.
+  # One opacity for the single visible representation. Region colors inherit it.
   base_opacity: 0.35
-
-  # Under the illustrative style this defaults to the native illustrative
-  # theme. Use uniform when you prefer one fixed base_color instead.
-  # base_color_theme: illustrative
-  base_color: "#CBD5E1"
   background: "#FFFFFF"
+
+  # Create named Mol* selector components for the regions, but do not attach
+  # independent visual representations. This prevents duplicate geometry.
+  create_components: true
+  component_visuals: false
+  base_component_name: Base structure
   show_labels: false
   show_tooltips: true
 
-  # Optional advanced overrides:
-  # base_color_theme_params:
-  #   style:
-  #     name: entity-id
-  #     params:
-  #       overrideWater: true
-  # base_representation_params:
-  #   ignoreLight: true
-  # postprocessing:
-  #   enable_outline: true
-  #   enable_ssao: true
-
-  # Keep the colored base structure and also create one named Mol* component
-  # for each region. Independent component representations are hidden initially
-  # to avoid drawing the same residues twice. Open a layout with Controls and
-  # use the component eye icons to show, hide, isolate, or restyle each region.
-  create_components: true
-  component_representation: cartoon
-
-  # uniform = use the region color; element-symbol = atom/CPK colors;
-  # default = let Mol* choose the normal color theme for the representation.
-  component_color_theme: uniform
-
-  components_visible: false
-  component_opacity: 1.0
-  base_component_name: Base structure
+  # Optional: use one fixed base color instead of the native illustrative theme.
+  # base_color_theme: uniform
+  # base_color: "#CBD5E1"
 
 regions:
-  # Inclusive continuous range.
-  - name: Region 1
+  # Later entries replace earlier colors where selections overlap.
+  - name: N-terminal domain
     start: 1
     end: 25
     color: "#2563EB"
 
-  # Exact, non-contiguous residue positions. Use this instead of start/end for
-  # this entry. All positions form one named Mol* component.
-  - name: Active-site atoms
+  - name: Active-site residues
     positions: [2, 10, 22]
     color: "#FACC15"
-    component_representation: ball_and_stick
-    component_color_theme: element-symbol
-    component_visible: true
 
-  - name: Region 3 surface
+  - name: C-terminal region
     start: 36
     end: 50
     color: "#F97316"
-    component_representation: surface
-    component_color: "#F97316"
-    component_color_theme: uniform
-    component_opacity: 0.65
-    component_visible: false
+
+  # Deliberate opt-in exception: component_visual creates an additional visual
+  # representation. Omit it when you want strict single-visual mode.
+  # - name: Active-site atoms
+  #   positions: [2, 10, 22]
+  #   color: "#FACC15"
+  #   component_visual: true
+  #   component_representation: ball_and_stick
+  #   component_color_theme: element-symbol
+  #   component_visible: true
 `;
     downloadText(template, 'protein-regions-template.yaml', 'application/yaml;charset=utf-8');
   }
@@ -1565,7 +1574,7 @@ regions:
 
   async function initializeViewer() {
     elements.brandTitle.textContent = config.title;
-    elements.brandSubtitle.textContent = 'PDB + YAML regions + base styles';
+    elements.brandSubtitle.textContent = 'PDB + YAML single-view overrides';
     elements.pageTitle.textContent = config.title;
     elements.pageSubtitle.textContent = config.subtitle;
     document.title = config.title;
@@ -1641,7 +1650,9 @@ regions:
           baseOpacity: state.current.annotation.viewer.baseOpacity,
           baseRepresentationParams: state.current.annotation.viewer.baseRepresentationParams,
           postprocessing: state.current.annotation.viewer.postprocessing,
-          baseComponentName: state.current.annotation.viewer.baseComponentName
+          baseComponentName: state.current.annotation.viewer.baseComponentName,
+          createComponents: state.current.annotation.viewer.createComponents,
+          componentVisuals: state.current.annotation.viewer.componentVisuals
         },
         regions: state.current.annotation.regions.map(region => ({
           name: region.name,
@@ -1656,6 +1667,7 @@ regions:
           requestedResidues: region.coverage.requested,
           selectionComplete: region.coverage.complete,
           createComponent: region.createComponent,
+          componentVisual: region.componentVisual,
           componentName: region.componentName,
           componentRepresentation: region.componentRepresentation,
           componentColorTheme: region.componentColorTheme,
