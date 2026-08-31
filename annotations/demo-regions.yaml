@@ -1,0 +1,43 @@
+version: 1
+title: Synthetic demo protein regions
+
+# Use author residue numbers from the PDB file. Ranges are inclusive.
+numbering: auth
+default_chain: A
+
+viewer:
+  representation: cartoon
+  base_color: "#CBD5E1"
+  background: "#FFFFFF"
+  show_labels: false
+
+regions:
+  - name: N-terminal segment
+    start: 1
+    end: 10
+    color: "#2563EB"
+
+  - name: Helix 1 extension
+    start: 11
+    end: 18
+    color: "#06B6D4"
+
+  - name: Flexible linker 1
+    start: 19
+    end: 24
+    color: "#F59E0B"
+
+  - name: Central helical region
+    start: 25
+    end: 42
+    color: "#10B981"
+
+  - name: Flexible linker 2
+    start: 43
+    end: 48
+    color: "#F97316"
+
+  - name: C-terminal helix
+    start: 49
+    end: 60
+    color: "#8B5CF6"
