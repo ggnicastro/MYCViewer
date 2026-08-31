@@ -14,6 +14,7 @@ viewer:
   base_opacity: 0.20
   show_labels: false
   show_tooltips: true
+  component_visuals: false
 
   # Every enabled YAML region becomes a separately named Mol* component.
   # They start hidden so the compact colored base view is not duplicated.
