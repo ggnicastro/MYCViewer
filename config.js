@@ -10,7 +10,7 @@ window.PROTEIN_REGION_VIEWER_CONFIG = {
   subtitle: 'Color PDB residue ranges from a YAML annotation file',
 
   autoLoad: true,
-  pdbUrl: './pdb/demo-protein.pdb',
+  pdbUrl: './pdb/demo2.pdb',
   yamlUrl: './annotations/demo-regions.yaml',
 
   // canvas | sequence | controls | sequence-controls | full
