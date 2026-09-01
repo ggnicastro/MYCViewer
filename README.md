@@ -1,39 +1,576 @@
+<div align="center">
+
 # Mol* YAML Component Viewer
 
-A static GitHub Pages application that loads one PDB structure and one YAML file, then creates named Mol* components from residue ranges, exact residue positions, or single residues.
+**Build interactive protein scenes from a PDB structure and a human-readable YAML component map.**
 
-## Rendering model
+[![Mol*](https://img.shields.io/badge/Mol*-5.11.0-111827?style=flat-square)](https://molstar.org/)
+[![YAML](https://img.shields.io/badge/YAML-js--yaml%205.4.1-CB171E?style=flat-square)](https://github.com/nodeca/js-yaml)
+[![GitHub Pages](https://img.shields.io/badge/deployment-GitHub%20Pages-222222?style=flat-square&logo=github)](https://pages.github.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2563EB?style=flat-square)](LICENSE)
 
-This version uses one lightweight context component plus the YAML region components:
+</div>
 
-- `Base structure` is created automatically as a white cartoon with opacity `0.2`;
-- it selects the complete chain or chains from `default_chain`; when no default chain is set, it selects all protein chains;
-- every enabled YAML region can create one named Mol* component above that context cartoon;
-- every region component can have its own representation, color theme, opacity, and initial visibility;
-- hydrogen display is forced to **Hide All** for the loaded scene and newly added representations;
-- the custom YAML annotation sidebar remains removed;
-- component management is done with the native Mol* controls.
+## Overview
 
-The visual defaults under `viewer` still apply only to the YAML region components. Each region inherits those values and may override only the properties that need to differ.
+Mol* YAML Component Viewer is a zero-build, static web application for presenting annotated protein structures. It loads one PDB file and one YAML document, converts each YAML region into a named Mol* component, and renders the resulting scene directly in the browser.
 
-## Features
+The scene contains:
 
-- PDB + YAML loading from the repository or from local files
-- inclusive `start`/`end` residue ranges
-- exact residue lists such as `positions: [2, 10, 22]`
-- single-residue selections with `residue: 42`
-- author (`auth`) or sequential (`label`) residue numbering
-- one chain, multiple chains, or all chains
-- an automatic translucent white `Base structure` cartoon
-- named Mol* region components
-- hydrogen display disabled by default
-- global visual defaults with per-region overrides
-- native Mol* representations and color themes
-- Mol* Illustrative-style defaults
-- component opacity and initial visibility
-- amino-acid sequence and Mol* control layouts
-- PDB, YAML, and YAML-template downloads
-- static deployment through GitHub Pages
+- a translucent white **Base structure** cartoon for whole-chain context;
+- one native Mol* component for each enabled YAML region;
+- independent representation, color theme, opacity, visibility, tooltip, and label settings per region;
+- residue selections defined as ranges, exact positions, or single residues;
+- optional Mol* Illustrative rendering and post-processing;
+- hidden hydrogens by default;
+- switchable 3D, sequence, controls, and full-interface layouts.
+
+No server-side application, database, bundler, or build pipeline is required. The project can be hosted as-is on GitHub Pages.
+
+## Highlights
+
+- **YAML-driven scenes** — keep structural annotations readable, version-controlled, and separate from the PDB file.
+- **Native Mol* components** — every region appears in the Mol* component hierarchy and can be focused, hidden, or restyled.
+- **Flexible residue selection** — use inclusive ranges, exact residue lists, or a single position.
+- **Global defaults with local overrides** — define a common style once and override only the regions that need different rendering.
+- **Illustrative mode** — enable Mol* Illustrative colors, ignore-light rendering, outlines, and ambient occlusion from YAML.
+- **Clean context layer** — the complete chain is shown as a white cartoon at `0.2` opacity beneath the annotated components.
+- **Hydrogen-free views** — hydrogens are hidden globally and ignored by atomistic component representations.
+- **Static hosting** — deploy through the included GitHub Actions workflow.
+- **Local-file support** — inspect unpublished PDB and YAML files without uploading them to a server.
+
+## Quick start
+
+### 1. Add your files
+
+Place the structure and annotation files in the repository:
+
+```text
+pdb/my-protein.pdb
+annotations/my-protein.yaml
+```
+
+### 2. Configure the viewer
+
+Edit `config.js`:
+
+```js
+window.PROTEIN_REGION_VIEWER_CONFIG = {
+  title: 'My protein',
+  subtitle: 'Functional regions and structural features',
+
+  autoLoad: true,
+  pdbUrl: './pdb/my-protein.pdb',
+  yamlUrl: './annotations/my-protein.yaml',
+
+  // canvas | sequence | controls | sequence-controls | full
+  defaultLayout: 'canvas'
+};
+```
+
+`canvas` is the default **3D only** layout.
+
+### 3. Define the components
+
+Create `annotations/my-protein.yaml`:
+
+```yaml
+version: 1
+title: My protein component scene
+numbering: auth
+default_chain: A
+
+viewer:
+  style: illustrative
+  component_representation: spacefill
+  component_color_theme: illustrative
+  component_opacity: 0.45
+  components_visible: true
+  background: "#FFFFFF"
+
+regions:
+  - name: N-terminal domain
+    start: 1
+    end: 90
+    color: "#2563EB"
+
+  - name: Active-site atoms
+    positions: [102, 145, 177]
+    component_representation: ball_and_stick
+    component_color_theme: element-symbol
+    component_opacity: 1.0
+
+  - name: C-terminal surface
+    start: 200
+    end: 320
+    component_representation: surface
+    component_color_theme: uniform
+    component_color: "#F97316"
+    component_opacity: 0.65
+```
+
+### 4. Publish
+
+Push the repository to GitHub, then select **Settings → Pages → GitHub Actions**. The included workflow publishes the site from the `main` branch.
+
+## Scene model
+
+### Base structure
+
+The viewer automatically creates a context component before the YAML regions:
+
+```text
+Base structure
+├── representation: cartoon
+├── color: #FFFFFF
+├── opacity: 0.2
+└── hydrogens: hidden
+```
+
+Its selection is determined by `default_chain`:
+
+- `default_chain: A` selects the complete chain `A`;
+- `default_chain: [A, B]` selects complete chains `A` and `B`;
+- omitting `default_chain` selects all protein chains.
+
+The base component is intentionally subtle. Region components are rendered afterward and remain visually dominant.
+
+### Region components
+
+Each enabled entry in `regions` creates a named Mol* component and, by default, one representation. Components are independent: each may use a different representation, color theme, opacity, or initial visibility.
+
+The native Mol* hierarchy therefore follows this pattern:
+
+```text
+Base structure
+N-terminal domain
+Active-site atoms
+C-terminal surface
+...
+```
+
+## Application configuration
+
+`config.js` controls file loading and the initial interface layout.
+
+| Property | Type | Default | Description |
+|---|---:|---:|---|
+| `title` | string | project title | Main application title |
+| `subtitle` | string | project subtitle | Supporting text below the title |
+| `autoLoad` | boolean | `true` | Loads the configured PDB and YAML on startup |
+| `pdbUrl` | string | demo path | Repository-relative or absolute PDB URL |
+| `yamlUrl` | string | demo path | Repository-relative or absolute YAML URL |
+| `defaultLayout` | string | `canvas` | Initial Mol* interface layout |
+
+### Layouts
+
+| Value | Interface |
+|---|---|
+| `canvas` | 3D only |
+| `sequence` | Sequence panel + 3D |
+| `controls` | Mol* controls + 3D |
+| `sequence-controls` | Sequence panel + controls + 3D |
+| `full` | Full Mol* interface, including data tree and log |
+
+The layout selector remains available after startup, so changing `defaultLayout` does not remove access to the other views.
+
+## YAML reference
+
+### Top-level structure
+
+```yaml
+version: 1
+title: Optional scene title
+numbering: auth
+default_chain: A
+
+viewer:
+  # global component defaults
+
+regions:
+  # one or more region definitions
+```
+
+### Residue numbering
+
+Use PDB author numbering:
+
+```yaml
+numbering: auth
+```
+
+Use sequential polymer numbering generated by Mol*:
+
+```yaml
+numbering: label
+```
+
+A region can override the global mode:
+
+```yaml
+- name: Sequential segment
+  numbering: label
+  start: 1
+  end: 50
+```
+
+### Chain selection
+
+Apply regions to a default chain:
+
+```yaml
+default_chain: A
+```
+
+Select one chain for a specific region:
+
+```yaml
+- name: Chain B domain
+  chain: B
+  start: 10
+  end: 80
+```
+
+Select multiple chains:
+
+```yaml
+- name: Conserved motif
+  chains: [A, B, C]
+  positions: [42, 77, 105]
+```
+
+Select all chains:
+
+```yaml
+- name: Shared terminal region
+  chain: all
+  start: 1
+  end: 15
+```
+
+### Selection forms
+
+Every region uses exactly one selection form.
+
+#### Inclusive range
+
+```yaml
+- name: Catalytic domain
+  start: 80
+  end: 160
+```
+
+Both `start` and `end` are included.
+
+#### Exact positions
+
+```yaml
+- name: Catalytic residues
+  positions: [2, 10, 22]
+```
+
+All positions are grouped into one named component. Duplicate positions are removed and the list is sorted internally.
+
+#### Single residue
+
+```yaml
+- name: Catalytic lysine
+  residue: 42
+```
+
+Do not combine `positions` with `start`/`end` in the same region.
+
+## Viewer defaults
+
+Properties under `viewer` provide defaults for the YAML region components.
+
+```yaml
+viewer:
+  style: illustrative
+  component_representation: spacefill
+  component_color_theme: illustrative
+  component_opacity: 0.45
+  components_visible: true
+
+  background: "#FFFFFF"
+  create_components: true
+  show_labels: false
+  show_tooltips: true
+```
+
+| Property | Description |
+|---|---|
+| `style` | Global visual preset: `default` or `illustrative` |
+| `component_representation` | Default geometry for region components |
+| `component_color_theme` | Default Mol* color theme |
+| `component_color` | Default fixed color when the theme is `uniform` |
+| `component_opacity` | Default opacity from `0` to `1` |
+| `components_visible` | Initial visibility of region representations |
+| `background` | Viewer background color |
+| `create_components` | Enables representation creation by default |
+| `show_labels` | Enables 3D labels by default |
+| `show_tooltips` | Enables region tooltips by default |
+| `postprocessing` | Optional Mol* outline and SSAO settings |
+
+These defaults apply to region components only. The Base structure remains a white cartoon at `0.2` opacity.
+
+## Region overrides
+
+A region inherits the viewer defaults and may override any component property:
+
+```yaml
+- name: Active-site atoms
+  positions: [44, 79, 133]
+
+  component_name: Active-site atoms
+  component_representation: ball_and_stick
+  component_color_theme: element-symbol
+  component_opacity: 1.0
+  component_visible: true
+
+  tooltip: true
+  label: false
+  description: Residues forming the predicted catalytic site.
+```
+
+The effective value is resolved in this order:
+
+1. region property;
+2. corresponding `viewer` default;
+3. built-in application default.
+
+### Region properties
+
+| Property | Description |
+|---|---|
+| `name` | Region name and default Mol* component name |
+| `enabled` | Includes or excludes the region |
+| `start`, `end` | Inclusive residue range |
+| `positions` | Exact residue list |
+| `residue` | Single residue selection |
+| `chain`, `chains` | Chain override |
+| `numbering` | `auth` or `label` override |
+| `color` | Shorthand for a uniform component color |
+| `create_component` | Enables or suppresses the region representation |
+| `component_name` | Name shown in the Mol* component hierarchy |
+| `component_representation` | Region-specific representation |
+| `component_color_theme` | Region-specific Mol* color theme |
+| `component_color` | Region-specific fixed color |
+| `component_opacity` | Region-specific opacity |
+| `component_visible` | Initial visibility |
+| `tooltip` | Enables the Mol* hover tooltip |
+| `label` | Enables a 3D label |
+| `description` | Additional tooltip text |
+
+### `color` shorthand
+
+This concise form:
+
+```yaml
+- name: Blue domain
+  start: 1
+  end: 100
+  color: "#2563EB"
+```
+
+is equivalent to:
+
+```yaml
+- name: Blue domain
+  start: 1
+  end: 100
+  component_color_theme: uniform
+  component_color: "#2563EB"
+```
+
+An explicit `component_color_theme` takes priority over `color`:
+
+```yaml
+- name: Atom-colored site
+  positions: [25, 80, 121]
+  color: "#FACC15"
+  component_representation: ball_and_stick
+  component_color_theme: element-symbol
+```
+
+The component above uses native element colors rather than the yellow shorthand color.
+
+## Illustrative style
+
+Enable Mol* Illustrative rendering with:
+
+```yaml
+viewer:
+  style: illustrative
+```
+
+Unless explicitly overridden, the preset supplies:
+
+- `spacefill` representation;
+- `illustrative` color theme;
+- ignore-light rendering;
+- outlines;
+- ambient occlusion/SSAO.
+
+A region can still override the global style:
+
+```yaml
+- name: Active-site atoms
+  positions: [44, 79, 133]
+  component_representation: ball_and_stick
+  component_color_theme: element-symbol
+  component_opacity: 1.0
+```
+
+The Illustrative post-processing applies to the scene, while the Base structure remains a translucent white cartoon.
+
+## Representations
+
+Supported `component_representation` values:
+
+| Value | Typical use |
+|---|---|
+| `cartoon` | Protein domains and secondary structure |
+| `backbone` | Lightweight polymer trace |
+| `ball_and_stick` | Active sites and atomic contacts |
+| `line` | Compact atomistic views |
+| `spacefill` | Molecular volume and Illustrative scenes |
+| `surface` | Accessible surface and pocket context |
+| `putty` | Variable-width polymer representation |
+| `carbohydrate` | Carbohydrate structures |
+
+Hydrogens are hidden automatically for atomistic representations.
+
+## Color themes
+
+Common `component_color_theme` values include:
+
+| Value | Result |
+|---|---|
+| `uniform` | One fixed color from `component_color` or `color` |
+| `default` | Representation-specific Mol* default |
+| `element-symbol` | Element/CPK atom colors |
+| `chain-id` | Color by chain |
+| `residue-name` | Color by residue type |
+| `secondary-structure` | Color by secondary structure |
+| `sequence-id` | Sequence-position gradient |
+| `hydrophobicity` | Hydrophobicity scale |
+| `molecule-type` | Protein, nucleic acid, ligand, water, and related types |
+| `illustrative` | Mol* Illustrative color theme |
+| `uncertainty` | Coordinate uncertainty/B-factor-based coloring |
+| `occupancy` | Atomic occupancy |
+| `formal-charge` | Formal charge |
+
+The aliases `atom`, `element`, and `cpk` are normalized to `element-symbol`.
+
+## Advanced Mol* parameters
+
+Representation parameters can be defined globally:
+
+```yaml
+viewer:
+  component_representation_params:
+    ignoreLight: true
+```
+
+A region mapping is merged over the global mapping:
+
+```yaml
+- name: Detailed surface
+  start: 50
+  end: 150
+  component_representation: surface
+  component_representation_params:
+    quality: high
+```
+
+Color-theme parameters can also be passed through:
+
+```yaml
+viewer:
+  component_color_theme: chain-id
+  component_color_theme_params:
+    asymId: auth
+```
+
+Post-processing options:
+
+```yaml
+viewer:
+  postprocessing:
+    enable_outline: true
+    enable_ssao: true
+```
+
+These advanced mappings are passed to Mol* and therefore depend on the selected representation or color theme.
+
+## Component visibility and overlap
+
+Show every region initially:
+
+```yaml
+viewer:
+  components_visible: true
+```
+
+Start one representation hidden:
+
+```yaml
+- name: Optional surface
+  start: 200
+  end: 300
+  component_representation: surface
+  component_visible: false
+```
+
+Hidden components remain available in the native Mol* controls.
+
+Region components are independent representations. When selections overlap, both geometries are drawn over the shared residues. This is useful for highlighting an active site with ball-and-stick over a domain surface, but non-overlapping selections are recommended when duplicate geometry is not desired.
+
+## Local files and privacy
+
+The toolbar can load a local `.pdb` file and a local `.yaml`/`.yml` file. File contents are read by the browser and are not uploaded by this application.
+
+For reliable local testing, serve the repository through HTTP instead of opening `index.html` with a `file://` URL:
+
+```bash
+python3 -m http.server 8000
+```
+
+Then open:
+
+```text
+http://localhost:8000/
+```
+
+## Downloads
+
+After a scene loads, the interface provides:
+
+- **Download PDB** — downloads the active structure source;
+- **Download YAML** — downloads the active annotation source;
+- **YAML template** — downloads a reusable annotation template.
+
+For local inputs, the original selected files are used.
+
+## GitHub Pages deployment
+
+The repository includes `.github/workflows/pages.yml`.
+
+1. Create a GitHub repository.
+2. Place the project files at the repository root.
+3. Push to the `main` branch.
+4. Open **Settings → Pages**.
+5. Select **GitHub Actions** as the source.
+6. Open the **Actions** tab and confirm that the deployment completes successfully.
+
+A project site is typically published at:
+
+```text
+https://USERNAME.github.io/REPOSITORY/
+```
+
+Paths in `config.js` are case-sensitive on GitHub Pages.
 
 ## Repository structure
 
@@ -58,622 +595,70 @@ The visual defaults under `viewer` still apply only to the YAML region component
 └── styles.css
 ```
 
-## Quick start
-
-1. Put the PDB file in `pdb/`.
-2. Put the YAML file in `annotations/`.
-3. Edit `config.js`.
-4. Commit the files to the `main` branch.
-5. In **Settings → Pages**, select **GitHub Actions**.
-
-Example `config.js`:
-
-```js
-window.PROTEIN_REGION_VIEWER_CONFIG = {
-  title: 'My protein components',
-  subtitle: 'Functional regions rendered as independent Mol* components',
-
-  autoLoad: true,
-  pdbUrl: './pdb/my-protein.pdb',
-  yamlUrl: './annotations/my-protein.yaml',
-
-  // canvas | sequence | controls | sequence-controls | full
-  defaultLayout: 'sequence-controls'
-};
-```
-
-Set `autoLoad: false` to open an empty viewer and use only the local file selectors.
-
-## Minimal YAML
-
-```yaml
-version: 1
-title: My component scene
-numbering: auth
-default_chain: A
-
-viewer:
-  component_representation: cartoon
-  component_color_theme: uniform
-  component_color: "#CBD5E1"
-  component_opacity: 1.0
-  components_visible: true
-
-regions:
-  - name: N-terminal domain
-    start: 1
-    end: 90
-    color: "#2563EB"
-
-  - name: Active-site atoms
-    positions: [102, 145, 177]
-    component_representation: ball_and_stick
-    component_color_theme: element-symbol
-```
-
-The first region inherits the global cartoon representation but overrides its color. The second region overrides both representation and color theme.
-
-## Global defaults and region overrides
-
-Properties inside `viewer` are defaults for all components:
-
-```yaml
-viewer:
-  component_representation: spacefill
-  component_color_theme: illustrative
-  component_opacity: 0.45
-  components_visible: true
-```
-
-A region may override any of them:
-
-```yaml
-- name: Catalytic surface
-  start: 120
-  end: 220
-  component_representation: surface
-  component_color_theme: uniform
-  component_color: "#F97316"
-  component_opacity: 0.65
-  component_visible: true
-```
-
-The effective value is selected in this order:
-
-1. a property declared in the region;
-2. the corresponding `viewer.component_*` default;
-3. the built-in application default.
-
-### `color` shorthand
-
-This:
-
-```yaml
-- name: Blue domain
-  start: 1
-  end: 100
-  color: "#2563EB"
-```
-
-is equivalent to:
-
-```yaml
-- name: Blue domain
-  start: 1
-  end: 100
-  component_color_theme: uniform
-  component_color: "#2563EB"
-```
-
-An explicit `component_color_theme` takes priority over `color`. For example, this uses native atom colors rather than yellow:
-
-```yaml
-- name: Active-site atoms
-  positions: [25, 80, 121]
-  color: "#FACC15"
-  component_representation: ball_and_stick
-  component_color_theme: element-symbol
-```
-
-## Base context and region components
-
-The native Mol* component hierarchy starts with the automatic context component and then lists the YAML regions:
-
-```text
-Base structure
-Region 1
-Region 2
-Region 3
-```
-
-`Base structure` is always:
-
-```text
-selection: complete default chain(s), or all protein chains when default_chain is omitted
-representation: cartoon
-color: white
-opacity: 0.2
-```
-
-The base component is created first. YAML region components are then created as independent representations using their inherited or per-region settings. The base component does not consume or replace any of the existing `viewer.component_*` options.
-
-### Overlapping selections
-
-Independent Mol* components remain independent representations. If two YAML region selections overlap, both region representations are drawn for the shared residues. The translucent base cartoon is only a structural context layer.
-
-## Mol* Illustrative style
-
-Use:
-
-```yaml
-viewer:
-  style: illustrative
-```
-
-When component properties are omitted, this supplies these defaults:
-
-```text
-representation: spacefill
-color theme: illustrative
-ignore light: enabled
-outline: enabled
-SSAO/occlusion: enabled
-```
-
-A complete example:
-
-```yaml
-viewer:
-  style: illustrative
-  component_representation: spacefill
-  component_color_theme: illustrative
-  component_opacity: 0.4
-  components_visible: true
-  background: "#FFFFFF"
-```
-
-A region can still override the Illustrative defaults:
-
-```yaml
-- name: Ligand-contact residues
-  positions: [44, 79, 133]
-  component_representation: ball_and_stick
-  component_color_theme: element-symbol
-  component_opacity: 1.0
-```
-
-`style: illustrative` controls the YAML region defaults and post-processing. The automatic `Base structure` remains a white cartoon at opacity `0.2`.
-
-## Representations
-
-Supported values for `component_representation`:
-
-```text
-cartoon
-backbone
-ball_and_stick
-line
-spacefill
-carbohydrate
-surface
-putty
-```
-
-Example global default:
-
-```yaml
-viewer:
-  component_representation: cartoon
-```
-
-Example per-region override:
-
-```yaml
-- name: Domain surface
-  start: 50
-  end: 180
-  component_representation: surface
-  component_opacity: 0.55
-```
-
-## Color themes
-
-Useful values for `component_color_theme` include:
-
-```text
-uniform
-default
-element-symbol
-chain-id
-residue-name
-secondary-structure
-sequence-id
-hydrophobicity
-molecule-type
-illustrative
-uncertainty
-occupancy
-formal-charge
-```
-
-Aliases `atom`, `element`, and `cpk` are normalized to `element-symbol`.
-
-### Atom/CPK colors
-
-```yaml
-- name: Active-site atoms
-  positions: [42, 77, 105]
-  component_representation: ball_and_stick
-  component_color_theme: element-symbol
-```
-
-### Fixed component color
-
-```yaml
-- name: Catalytic domain
-  start: 80
-  end: 160
-  component_color_theme: uniform
-  component_color: "#7C3AED"
-```
-
-### Hydrophobicity surface
-
-```yaml
-- name: Hydrophobic surface
-  start: 120
-  end: 250
-  component_representation: surface
-  component_color_theme: hydrophobicity
-  component_opacity: 0.7
-```
-
-## Opacity
-
-Global component opacity:
-
-```yaml
-viewer:
-  component_opacity: 0.4
-```
-
-Per-region override:
-
-```yaml
-- name: Opaque active site
-  positions: [45, 88, 132]
-  component_opacity: 1.0
-```
-
-Values range from `0` to `1`:
-
-```text
-0.00 = fully transparent
-0.25 = 25% opaque
-0.50 = 50% opaque
-1.00 = fully opaque
-```
-
-The automatic `Base structure` opacity is fixed at `0.2`. `component_opacity` continues to control only the YAML region components.
-
-## Hydrogen display
-
-Hydrogens are hidden automatically. The application sets the Mol* component-manager option to `Hide All` and also marks atomistic YAML representations to ignore hydrogens. No YAML property is required.
-
-This applies to region representations such as `ball_and_stick`, `line`, `spacefill`, and `surface`, including representations added later through the native Mol* controls.
-
-## Initial visibility
-
-Show all generated representations initially:
-
-```yaml
-viewer:
-  components_visible: true
-```
-
-Hide one component initially:
-
-```yaml
-- name: Optional surface
-  start: 200
-  end: 300
-  component_visible: false
-```
-
-A hidden representation is still present in the Mol* component hierarchy and can be enabled with the eye control.
-
-## Region selection forms
-
-Each region uses exactly one selection form.
-
-### Inclusive range
-
-```yaml
-- name: Domain
-  start: 10
-  end: 80
-```
-
-Residues 10 and 80 are included.
-
-### Exact positions
-
-```yaml
-- name: Catalytic residues
-  positions: [2, 10, 22]
-```
-
-All positions become one named component.
-
-### One residue
-
-```yaml
-- name: Catalytic lysine
-  residue: 42
-```
-
-Do not combine `positions` with `start`/`end` in the same region.
-
-## Chains
-
-A default chain for all regions:
-
-```yaml
-default_chain: A
-```
-
-One region on another chain:
-
-```yaml
-- name: Chain B domain
-  chain: B
-  start: 10
-  end: 80
-```
-
-Multiple chains:
-
-```yaml
-- name: Conserved residues
-  chains: [A, B, C]
-  positions: [42, 77, 105]
-```
-
-All chains:
-
-```yaml
-- name: Shared motif
-  chain: all
-  positions: [12, 25, 38]
-```
-
-You may also omit `default_chain`, `chain`, and `chains`.
-
-## Residue numbering
-
-Author/PDB numbering:
-
-```yaml
-numbering: auth
-```
-
-Sequential polymer numbering:
-
-```yaml
-numbering: label
-```
-
-Per-region override:
-
-```yaml
-- name: Sequential segment
-  numbering: label
-  start: 1
-  end: 50
-```
-
-## Other region properties
-
-```yaml
-- name: RNase H insertion
-  start: 120
-  end: 185
-
-  enabled: true
-  create_component: true
-  component_name: RNase H insertion
-  component_visible: true
-
-  tooltip: true
-  label: false
-  description: Conserved insertion in this protein family.
-```
-
-`create_component: false` suppresses that region's visual representation. A tooltip or 3D label may still require a selector component internally, but it does not add a visual representation.
-
-## Advanced representation and theme parameters
-
-Global representation parameters:
-
-```yaml
-viewer:
-  component_representation_params:
-    ignoreLight: true
-```
-
-Per-region parameters are merged over the global mapping:
-
-```yaml
-- name: Detailed surface
-  start: 50
-  end: 150
-  component_representation: surface
-  component_representation_params:
-    quality: high
-```
-
-Color-theme parameters:
-
-```yaml
-viewer:
-  component_color_theme: chain-id
-  component_color_theme_params:
-    asymId: auth
-```
-
-These mappings are passed to the corresponding Mol* theme or representation and therefore depend on that theme's own parameter schema.
-
-## Mol* layouts
-
-The page offers:
-
-| Value | Interface |
-|---|---|
-| `canvas` | 3D structure only |
-| `sequence` | Sequence + 3D |
-| `controls` | Mol* controls + 3D |
-| `sequence-controls` | Sequence + controls + 3D |
-| `full` | Full Mol* interface |
-
-For component management, use `controls`, `sequence-controls`, or `full`.
-
-Set the initial layout in `config.js`:
-
-```js
-defaultLayout: 'sequence-controls'
-```
-
-## Local files and privacy
-
-Local PDB and YAML files are read inside the browser tab. The application does not upload them to an application server.
-
-Use either:
-
-- **Choose PDB** and **Choose YAML**; or
-- drag one `.pdb` and one `.yaml`/`.yml` file onto the viewer.
-
-## Downloads
-
-After loading a pair, the footer enables:
-
-```text
-Download PDB
-Download YAML
-YAML template
-```
-
-The PDB and YAML downloads preserve the original loaded text.
-
-## GitHub Pages deployment
-
-The repository contains:
-
-```text
-.github/workflows/pages.yml
-```
-
-To publish:
-
-1. Push the project files to the repository root.
-2. Open **Settings → Pages**.
-3. Select **GitHub Actions** as the source.
-4. Run the workflow or push to `main`.
-
-For a project repository, the address normally follows this pattern:
-
-```text
-https://USERNAME.github.io/REPOSITORY/
-```
-
-## Updating an existing installation
-
-For the base-context update, replace:
-
-```text
-app.js
-index.html
-README.md
-UPDATE.md
-```
-
-No CSS, `config.js`, PDB, or YAML change is required. Keep your own:
-
-```text
-styles.css
-config.js
-pdb/
-annotations/your-file.yaml
-.github/
-```
-
-The white `Base structure` cartoon and the `Hide All` hydrogen option are applied automatically. Existing `viewer.component_*` and region-level settings continue to control the YAML region components exactly as before.
-
-## Safari cache
-
-The local asset URLs use `?v=7`. After publication, Safari should request the updated files.
-
-When an older version still appears:
-
-1. Enable Safari's web developer features.
-2. Use **Develop → Empty Caches**.
-3. Press `Command + R`.
-
-## Browser console API
-
-The page exposes:
-
-```js
-ProteinRegionViewer.getState()
-ProteinRegionViewer.loadConfigured()
-ProteinRegionViewer.loadSelectedFiles()
-ProteinRegionViewer.reload()
-ProteinRegionViewer.setLayout('full')
-```
-
-`getState()` reports the effective global component defaults and the resolved properties of every YAML region.
+## Safety limits
+
+The browser application applies defensive limits to prevent accidental resource exhaustion:
+
+| Resource | Limit |
+|---|---:|
+| PDB file size | 50 MB |
+| YAML file size | 2 MB |
+| YAML regions | 1,000 |
+| Positions per region | 5,000 |
+| Generated Mol* components | 250 |
+| Selector expressions | 25,000 |
+
+Large structures and many simultaneous surface or spacefill representations may still be constrained by available GPU memory.
 
 ## Troubleshooting
 
-### The viewer is empty
+### The viewer opens but no structure appears
 
-Confirm that:
+- Confirm that `pdbUrl` and `yamlUrl` point to existing files.
+- Check filename capitalization.
+- Confirm that the YAML contains at least one enabled region matching the PDB.
+- Verify that at least one matching region has `create_component: true`.
+- Open the browser developer console for validation details.
 
-- at least one region is enabled;
-- at least one region matches residues in the PDB;
-- `create_component` is not false for every matching region;
-- the component is not hidden by `component_visible: false`;
-- the chain and numbering mode match the PDB.
+### A region does not match residues
 
-### A region color is ignored
+- Verify whether the annotation uses `auth` or `label` numbering.
+- Check the chain ID in the PDB.
+- Confirm that `start`, `end`, `positions`, or `residue` refer to residues present in the selected chain.
 
-An explicit native theme takes priority over `color`:
+### A fixed color is not used
+
+An explicit non-uniform `component_color_theme` overrides `color` and `component_color`. Use:
 
 ```yaml
-component_color_theme: element-symbol
+component_color_theme: uniform
+component_color: "#2563EB"
 ```
 
-Remove that property or use `component_color_theme: uniform` when a fixed color is required.
+### Two representations occupy the same residues
 
-### Two components are drawn on top of one another
+The YAML entries overlap. This is expected for independent Mol* components. Adjust the residue selections, hide one component, or use the overlap intentionally for a secondary highlight.
 
-Their residue selections overlap. This is expected for independent Mol* representations. Make the selections disjoint when no layered geometry is desired.
+### The sequence panel is missing
 
-### The sequence is missing
+Choose `Sequence + 3D`, `Sequence + controls`, or `Full Mol* interface` from the layout selector.
 
-Choose `sequence`, `sequence-controls`, or `full` in the layout selector.
+### Safari shows an older version
 
-### The components are difficult to manage
-
-Choose `controls`, `sequence-controls`, or `full`, then use the native Mol* eye, focus, and representation controls.
+After a GitHub Pages deployment, use **Develop → Empty Caches**, then reload with `Command + R`. Confirm that the latest GitHub Actions run completed successfully.
 
 ## Included demo
 
-The included PDB is a synthetic 60-residue structure for interface testing only. It is not intended for scientific analysis.
+The repository includes a synthetic demonstration PDB and a matching YAML annotation. They are intended only to validate the interface and configuration workflow and must not be treated as scientific reference data.
 
-## Versions
+## Dependencies
 
-```text
-Mol* Viewer: 5.11.0
-js-yaml: 5.4.1
-Application: 2.0.0
-```
+- [Mol* Viewer 5.11.0](https://molstar.org/)
+- [js-yaml 5.4.1](https://github.com/nodeca/js-yaml)
+- GitHub Pages and GitHub Actions for optional static deployment
+
+Dependencies are loaded from jsDelivr; no package installation is required for normal use.
+
+## License
+
+This project is available under the [MIT License](LICENSE).

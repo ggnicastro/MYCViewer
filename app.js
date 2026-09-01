@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '2.1.0';
+  const APP_VERSION = '2.1.1';
   const MAX_PDB_BYTES = 50 * 1024 * 1024;
   const MAX_YAML_BYTES = 2 * 1024 * 1024;
   const MAX_REGIONS = 1000;
@@ -9,7 +9,7 @@
   const MAX_SELECTOR_EXPRESSIONS = 25000;
   const MAX_COMPONENTS = 250;
   const REGION_COMPONENT_CUSTOM_KEY = 'protein_region_viewer_component';
-  const DEFAULT_LAYOUT = 'sequence-controls';
+  const DEFAULT_LAYOUT = 'canvas';
   const DEFAULT_COMPONENT_COLOR = '#CBD5E1';
   const DEFAULT_BACKGROUND = '#FFFFFF';
   const DEFAULT_VIEWER_STYLE = 'default';
