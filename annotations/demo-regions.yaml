@@ -27,7 +27,7 @@ viewer:
 regions:
   - name: Helix 1
     start: 2
-    end: 15
+    end: 16
     color: "#418ABF"
     components_visible: True
     component_representation: cartoon
